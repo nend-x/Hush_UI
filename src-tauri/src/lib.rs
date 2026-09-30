@@ -188,11 +188,11 @@ pub fn run() {
             // still declared in tauri.conf.json (hidden at startup) so older
             // setups don't break, but nothing ever shows it.
             if let Some(taskbar) = app.get_webview_window("taskbar") {
-                let _ = taskbar.hide();
+                win32::window::hide_window(&taskbar);
             }
 
             if let Some(launcher) = app.get_webview_window("launcher") {
-                let _ = launcher.hide();
+                win32::window::hide_window(&launcher);
             }
 
             // Tables (pie Win-key picker) + the transient taskbar table
@@ -214,8 +214,35 @@ pub fn run() {
                     let _ = win32::window::set_picker_visible(&tables, false);
                 }
                 if let Some(strip) = app.get_webview_window("table-taskbar") {
-                    let _ = strip.hide();
+                    win32::window::hide_window(&strip);
                     let _ = win32::window::apply_no_activate(&strip);
+                }
+            }
+
+            // 0.3.2: suspend every WebView2 controller at boot. wry boots
+            // webviews as IsVisible(true) even when the window is hidden
+            // (WebViewAttributes::default().visible == true), so ALL hidden
+            // surfaces kept compositing through the WebView2 GPU process
+            // from process start — measured ~14% CPU at idle with the shell
+            // fully closed (rust side ~1%). show_window() and
+            // set_picker_visible() resume the controller on demand; a
+            // suspended page keeps loading and running JS (only rendering is
+            // frozen), so hidden pages stay warm and opening feels identical.
+            for label in [
+                "taskbar",
+                "launcher",
+                "hushlight",
+                "notification",
+                "tables",
+                "table-taskbar",
+                "table-settings",
+                "table-widgets",
+                "table-desktop",
+                "tutorial",
+                "screensaver",
+            ] {
+                if let Some(wv) = app.get_webview_window(label) {
+                    let _ = wv.as_ref().hide();
                 }
             }
 
@@ -612,7 +639,7 @@ fn show_launcher(app: &tauri::AppHandle) {
     // Show-desktop effect hardcoded OFF.
 
     let _ = hushlight.set_always_on_top(true);
-    let _ = hushlight.show();
+    win32::window::show_window(&hushlight);
     let _ = hushlight.set_focus();
     // Emit AFTER the window is on screen — the frontend's pop-in then starts
     // from a presented frame.
@@ -637,7 +664,7 @@ fn hide_launcher_animated(app: &tauri::AppHandle) {
         std::thread::sleep(std::time::Duration::from_millis(1200));
         if CLOSE_SEQ.load(Ordering::SeqCst) == seq {
             if let Some(hushlight) = handle.get_webview_window("hushlight") {
-                let _ = hushlight.hide();
+                win32::window::hide_window(&hushlight);
             }
             log::info!("hushlight hidden via fallback timer");
         }
@@ -655,7 +682,7 @@ fn launcher_close_finished(app: tauri::AppHandle) {
     }
     CLOSE_SEQ.fetch_add(1, Ordering::SeqCst);
     if let Some(hushlight) = app.get_webview_window("hushlight") {
-        let _ = hushlight.hide();
+        win32::window::hide_window(&hushlight);
     }
 }
 
@@ -686,7 +713,7 @@ fn close_launcher(app: tauri::AppHandle) {
     if let Some(launcher) = app.get_webview_window("launcher") {
         if launcher.is_visible().unwrap_or(false) && !LAUNCHER_OPEN.load(Ordering::SeqCst) {
             CLOSE_SEQ.fetch_add(1, Ordering::SeqCst);
-            let _ = launcher.hide();
+            win32::window::hide_window(&launcher);
             let _ = app.emit("launcher://force-hidden", ());
             return;
         }
@@ -910,7 +937,7 @@ fn open_taskbar_table(app: &tauri::AppHandle) {
     let _ = strip.set_size(tauri::LogicalSize::new(260.0, STRIP_H));
     let _ = strip.set_position(tauri::PhysicalPosition::new(x as i32, y as i32));
     let _ = strip.set_always_on_top(true);
-    let _ = strip.show();
+    win32::window::show_window(&strip);
     let _ = app.emit("table://taskbar-shown", ());
 
     // While the strip is open, any click outside its rect closes it with
@@ -976,7 +1003,7 @@ fn show_movable_table(
 
     let _ = win.set_position(tauri::PhysicalPosition::new(x as i32, y as i32));
     let _ = win.set_always_on_top(true);
-    let _ = win.show();
+    win32::window::show_window(&win);
     let _ = win.set_focus();
     let _ = app.emit(&format!("table://{key}-shown"), ());
 }
@@ -1037,7 +1064,7 @@ fn close_table(app: tauri::AppHandle, name: String) {
         win32::table_mouse::stop();
     }
     if let Some(win) = app.get_webview_window(label) {
-        let _ = win.hide();
+        win32::window::hide_window(&win);
     }
     // The pie picker itself was closed from the frontend (click dismiss /
     // Esc) rather than by a Win release — recover the Win-key latch the same
@@ -1189,7 +1216,7 @@ fn minimize_all_windows(app: tauri::AppHandle) {
         if LAUNCHER_OPEN.swap(false, Ordering::SeqCst) {
             CLOSE_SEQ.fetch_add(1, Ordering::SeqCst);
             if let Some(hushlight) = app.get_webview_window("hushlight") {
-                let _ = hushlight.hide();
+                win32::window::hide_window(&hushlight);
             }
             let _ = app.emit("hushlight://hidden", ());
         }
@@ -1973,12 +2000,12 @@ fn show_launcher_for_screenshot(app: tauri::AppHandle) {
     if LAUNCHER_OPEN.swap(false, Ordering::SeqCst) {
         CLOSE_SEQ.fetch_add(1, Ordering::SeqCst);
         if let Some(hushlight) = app.get_webview_window("hushlight") {
-            let _ = hushlight.hide();
+            win32::window::hide_window(&hushlight);
         }
     }
     if let Some(launcher) = app.get_webview_window("launcher") {
         fit_launcher_to_screen(&app);
-        let _ = launcher.show();
+        win32::window::show_window(&launcher);
         let _ = launcher.set_focus();
         let _ = launcher.set_always_on_top(true);
         // 0.3.0: the launcher page now starts/stops its polling loops
@@ -2079,7 +2106,7 @@ fn show_notification_payload(handle: &tauri::AppHandle, payload: NotificationPay
 
     NOTIFY_SEQ.fetch_add(1, Ordering::SeqCst);
     position_notification(&win);
-    let _ = win.show();
+    win32::window::show_window(&win);
     let _ = handle.emit("notify://show", payload);
 }
 
@@ -2104,7 +2131,7 @@ fn notify(app: tauri::AppHandle, title: String, body: String, duration_ms: Optio
 #[tauri::command]
 fn notification_close_finished(app: tauri::AppHandle) {
     if let Some(win) = app.get_webview_window("notification") {
-        let _ = win.hide();
+        win32::window::hide_window(&win);
     }
 }
 
@@ -2117,7 +2144,7 @@ fn notification_close_finished(app: tauri::AppHandle) {
 fn show_screensaver(app: tauri::AppHandle) {
     if let Some(win) = app.get_webview_window("screensaver") {
         let _ = win.set_fullscreen(true);
-        let _ = win.show();
+        win32::window::show_window(&win);
         let _ = win.set_focus();
         let _ = app.emit("screensaver://shown", ());
     }
@@ -2126,7 +2153,7 @@ fn show_screensaver(app: tauri::AppHandle) {
 #[tauri::command]
 fn hide_screensaver(app: tauri::AppHandle) {
     if let Some(win) = app.get_webview_window("screensaver") {
-        let _ = win.hide();
+        win32::window::hide_window(&win);
         let _ = app.emit("screensaver://hidden", ());
     }
 }
@@ -2756,7 +2783,7 @@ fn walk_programs_inner(
 // ===== First-run tutorial =====
 fn show_tutorial(app: &tauri::AppHandle) {
     if let Some(win) = app.get_webview_window("tutorial") {
-        let _ = win.show();
+        win32::window::show_window(&win);
         let _ = win.set_focus();
         let _ = app.emit("tutorial://start", ());
     }
@@ -2767,7 +2794,7 @@ fn show_tutorial(app: &tauri::AppHandle) {
 fn finish_tutorial(app: tauri::AppHandle) {
     persist::save_tutorial_seen(true);
     if let Some(win) = app.get_webview_window("tutorial") {
-        let _ = win.hide();
+        win32::window::hide_window(&win);
     }
 }
 
