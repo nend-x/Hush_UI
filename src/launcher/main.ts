@@ -830,8 +830,8 @@ function launch(item: LauncherItem | SearchResult) {
 // Items are matched by their unique id (full path) — NOT by display name.
 // Matching by name made the launch animation (and with it the perceived
 // click target) land on the first item that happened to share the label,
-// e.g. spinning the "flatui" FOLDER tile while actually launching
-// "flatui.exe". Plain loops with early return — no closure assignment, so
+// e.g. spinning a FOLDER tile while actually launching an .exe that
+// shares its label. Plain loops with early return — no closure assignment, so
 // the compiler keeps the narrowing honest.
 function findLaunchTarget(item: LauncherItem | SearchResult): HTMLElement | null {
   for (const el of Array.from(grid.querySelectorAll(".launcher-item"))) {
@@ -863,13 +863,13 @@ function doLaunch(item: LauncherItem | SearchResult) {
   } else {
     // Check for special Hush_UI commands
     const path = item.path;
-    if (path === "flatui:reboot") {
+    if (path === "hush:reboot") {
       invoke("reboot_system");
-    } else if (path === "flatui:shutdown") {
+    } else if (path === "hush:shutdown") {
       invoke("shutdown_system");
-    } else if (path === "flatui:addstartup") {
+    } else if (path === "hush:addstartup") {
       invoke("add_to_startup");
-    } else if (path === "flatui:removestartup") {
+    } else if (path === "hush:removestartup") {
       invoke("remove_from_startup");
     } else {
       invoke("execute_run", { command: path });
@@ -1219,7 +1219,7 @@ minimizeAllBtn.addEventListener("click", () => {
 // cleanup; we just invoke it.
 exitBtn.addEventListener("click", () => {
   exitBtn.classList.add("active");
-  invoke("exit_flatui");
+  invoke("exit_hush");
 });
 
 runBtn.addEventListener("click", () => showRunDialog());

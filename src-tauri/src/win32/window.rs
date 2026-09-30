@@ -35,8 +35,8 @@ pub fn set_picker_visible(window: &WebviewWindow, visible: bool) -> windows::cor
     // (measured ~14% CPU with the shell closed). Resume BEFORE uncloaking
     // so the surface re-presents its last frame while still hidden; suspend
     // AFTER cloaking so nothing visible can flash.
-    if let Some(wv) = window.app_handle().get_webview_window(window.label()) {
-        if visible { let _ = wv.as_ref().show(); }
+    if visible {
+        resume_picker_webview(window);
     }
     let res = set_picker_visible_impl(visible, hwnd);
     if !visible {
@@ -45,6 +45,17 @@ pub fn set_picker_visible(window: &WebviewWindow, visible: bool) -> windows::cor
         }
     }
     res
+}
+
+/// Resume ONLY the picker's WebView2 controller while the window stays
+/// cloaked (0.3.3 show handshake). Resuming re-presents the last frame and
+/// lets the page lay out + paint the NEW pie anchor into the still-invisible
+/// surface, so the subsequent uncloak shows the correct frame immediately —
+/// the stale "pie at the old anchor" frame is never on screen.
+pub fn resume_picker_webview(window: &WebviewWindow) {
+    if let Some(wv) = window.app_handle().get_webview_window(window.label()) {
+        let _ = wv.as_ref().show();
+    }
 }
 
 fn set_picker_visible_impl(

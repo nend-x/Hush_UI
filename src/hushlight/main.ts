@@ -214,11 +214,11 @@ function updateSelection() {
 
 function launch(result: SearchResult) {
   const path = result.path;
-  if (path === "flatui:reboot") invoke("reboot_system");
-  else if (path === "flatui:shutdown") invoke("shutdown_system");
-  else if (path === "flatui:addstartup") invoke("add_to_startup");
-  else if (path === "flatui:removestartup") invoke("remove_from_startup");
-  else if (path === "hushui:screensaver") {
+  if (path === "hush:reboot") invoke("reboot_system");
+  else if (path === "hush:shutdown") invoke("shutdown_system");
+  else if (path === "hush:addstartup") invoke("add_to_startup");
+  else if (path === "hush:removestartup") invoke("remove_from_startup");
+  else if (path === "hush:screensaver") {
     // Screensaver shortcut: play the pop-out, then launch the fullscreen
     // OLED screensaver window.
     invoke("show_screensaver");

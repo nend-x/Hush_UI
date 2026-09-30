@@ -12,6 +12,9 @@ interface ShowPayload {
   x: number;
   y: number;
   center: boolean;
+  // Picker generation echoed back by tables_rendered — lets the backend
+  // reject render confirmations that belong to an older show.
+  seq: number;
 }
 
 // Theme + icon-recolor values are applied together by the shared applyTheme
@@ -116,7 +119,7 @@ root.addEventListener("mousedown", () => {
 });
 
 listen<ShowPayload>("tables://show", (e) => {
-  const { x, y } = e.payload;
+  const { x, y, seq } = e.payload;
   // Anchor point → CSS vars for the vignette + the pie layout.
   root.style.setProperty("--pick-x", `${x}px`);
   root.style.setProperty("--pick-y", `${y}px`);
@@ -125,6 +128,18 @@ listen<ShowPayload>("tables://show", (e) => {
   // Force a reflow so the pop-in transition replays every open.
   void root.offsetWidth;
   root.classList.add("shown");
+  // 0.3.3 render handshake: the backend resumes our (suspended) webview
+  // controller while the window is still cloaked, emits this event, and
+  // only uncloaks once we confirm the pie is laid out at the NEW anchor and
+  // a frame is committed. That is what kills the "pie spawns at its old
+  // dismissal spot and teleports to the cursor" microframe glitch — the
+  // stale frame from the previous open is never on screen. Double-rAF = the
+  // next painted frame includes today's layout; the setTimeout is a belt-
+  // and-braces confirmation in case the rAF pipeline is still spinning up
+  // right after the controller resume (the backend wait is bounded anyway).
+  const confirmRendered = () => invoke("tables_rendered", { seq });
+  requestAnimationFrame(() => requestAnimationFrame(confirmRendered));
+  window.setTimeout(confirmRendered, 120);
 });
 
 listen<ThemePayload>("theme://changed", (e) => {

@@ -15,10 +15,10 @@ fn main() {
     // second binary to ship) while still running in a clean, independent
     // process whose state isn't corrupted by whatever killed the parent.
     let args: Vec<String> = std::env::args().collect();
-    if args.len() == 3 && args[1] == flatui_lib::crash_handler::CRASH_REPORT_FLAG {
-        let exit_code = flatui_lib::crash_handler::show_crash_dialog(&args[2]);
+    if args.len() == 3 && args[1] == hush_lib::crash_handler::CRASH_REPORT_FLAG {
+        let exit_code = hush_lib::crash_handler::show_crash_dialog(&args[2]);
         std::process::exit(exit_code);
     }
 
-    flatui_lib::run()
+    hush_lib::run()
 }
