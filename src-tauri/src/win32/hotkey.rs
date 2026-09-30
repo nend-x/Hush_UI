@@ -220,6 +220,11 @@ unsafe extern "system" fn ll_keyboard_proc(
                     // the pie table picker.
                     WIN_PENDING.store(true, Ordering::SeqCst);
                     spawn_hold_detector();
+                    // Arm the Start-menu killer: only now (within a couple of
+                    // seconds of a real Win press) does the Start menu race
+                    // exist, and only now does it spend full process-snapshot
+                    // polls. Idle cost outside this window is near zero.
+                    crate::start_menu_killer::arm();
                     return SUPPRESS;
                 }
                 if is_up {

@@ -54,6 +54,23 @@ body {
   word-wrap: break-word;
 }
 
+/* statusbar (0.3.0) — shown when a payload carries progress (indexing) */
+.toast-progress {
+  margin-top: 8px;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.10);
+  overflow: hidden;
+}
+
+.toast-progress-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 3px;
+  background: var(--accent-muted, #8a8a8a);
+  transition: width 180ms ease-out;
+}
+
 /* slide-in from the right (the window sits at the screen's right edge) */
 .toast.in {
   animation: toast-in 420ms cubic-bezier(0.22, 1, 0.36, 1) forwards;

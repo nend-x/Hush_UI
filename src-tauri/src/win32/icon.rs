@@ -91,6 +91,19 @@ pub fn extract_icon_for_path(path: &str) -> Option<String> {
     result
 }
 
+/// Clear the icon cache (settings-table "Clear icon cache" button).
+/// Returns the number of entries dropped.
+pub fn clear_cache() -> usize {
+    match ICON_CACHE.lock() {
+        Ok(mut guard) => {
+            let n = guard.as_ref().map(|c| c.map.len()).unwrap_or(0);
+            *guard = None;
+            n
+        }
+        Err(_) => 0,
+    }
+}
+
 fn extract_icon_for_path_uncached(path: &str) -> Option<String> {
     let wide: Vec<u16> = OsStr::new(path)
         .encode_wide()

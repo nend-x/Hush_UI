@@ -135,9 +135,17 @@ struct RunningWindow {
 }
 
 fn scan_running_windows(blacklist: &[usize]) -> core::Result<Vec<TaskbarApp>> {
+    // PERF (0.3.0): the old code called get_process_exe(pid) per visible
+    // window — and every call created a FULL process snapshot. With W
+    // visible windows that was W snapshots per scan, and scans used to run
+    // every 2.5 s: a measurable share of the idle CPU burn. Build ONE
+    // pid→exe map up front and hand it to the enum callback.
+    let pid_exe = build_pid_exe_map();
+
     let state = ScanState {
         windows: Vec::new(),
         blacklist: blacklist.to_vec(),
+        pid_exe,
     };
     let state_ptr: *mut ScanState = Box::into_raw(Box::new(state));
     let lparam = LPARAM(state_ptr as isize);
@@ -166,6 +174,41 @@ fn scan_running_windows(blacklist: &[usize]) -> core::Result<Vec<TaskbarApp>> {
 struct ScanState {
     windows: Vec<RunningWindow>,
     blacklist: Vec<usize>,
+    /// pid → exe file name (from ONE process snapshot for the whole scan).
+    pid_exe: std::collections::HashMap<u32, String>,
+}
+
+/// One snapshot of the process table → { pid: exe file name }.
+/// (The old per-window snapshot was the single most expensive thing in the
+/// periodic taskbar refresh.)
+fn build_pid_exe_map() -> std::collections::HashMap<u32, String> {
+    let mut map = std::collections::HashMap::new();
+    unsafe {
+        let snap = match CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) {
+            Ok(s) => s,
+            Err(_) => return map,
+        };
+        let mut entry = PROCESSENTRY32W {
+            dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
+            ..Default::default()
+        };
+        if Process32FirstW(snap, &mut entry).is_ok() {
+            loop {
+                let exe_len = entry
+                    .szExeFile
+                    .iter()
+                    .position(|&c| c == 0)
+                    .unwrap_or(entry.szExeFile.len());
+                let exe_name = String::from_utf16_lossy(&entry.szExeFile[..exe_len]);
+                map.insert(entry.th32ProcessID, exe_name);
+                if Process32NextW(snap, &mut entry).is_err() {
+                    break;
+                }
+            }
+        }
+        let _ = windows::Win32::Foundation::CloseHandle(snap);
+    }
+    map
 }
 
 unsafe extern "system" fn enum_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
@@ -200,7 +243,13 @@ unsafe extern "system" fn enum_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
 
     let mut pid: u32 = 0;
     GetWindowThreadProcessId(hwnd, Some(&mut pid));
-    let exe_path = get_process_exe(pid);
+
+    // Resolve the exe path from the prebuilt map. Full-path resolution
+    // (OpenProcess + QueryFullProcessImageNameW) is still per unique pid —
+    // deduped so five windows of one app cost one resolution.
+    let exe_path = state.pid_exe.get(&pid).cloned().and_then(|exe_name| {
+        resolve_process_full_path(pid).or(Some(format!("C:\\Windows\\System32\\{}", exe_name)))
+    });
     let icon = exe_path.as_deref().and_then(extract_icon_for_path);
 
     state.windows.push(RunningWindow {
@@ -210,40 +259,6 @@ unsafe extern "system" fn enum_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
     });
 
     BOOL(1)
-}
-
-fn get_process_exe(pid: u32) -> Option<String> {
-    unsafe {
-        let snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0).ok()?;
-        let mut entry = PROCESSENTRY32W {
-            dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
-            ..Default::default()
-        };
-
-        if Process32FirstW(snap, &mut entry).is_err() {
-            let _ = windows::Win32::Foundation::CloseHandle(snap);
-            return None;
-        }
-
-        loop {
-            if entry.th32ProcessID == pid {
-                let exe_len = entry
-                    .szExeFile
-                    .iter()
-                    .position(|&c| c == 0)
-                    .unwrap_or(entry.szExeFile.len());
-                let exe_name = String::from_utf16_lossy(&entry.szExeFile[..exe_len]);
-                let _ = windows::Win32::Foundation::CloseHandle(snap);
-                return resolve_process_full_path(pid)
-                    .or(Some(format!("C:\\Windows\\System32\\{}", exe_name)));
-            }
-            if Process32NextW(snap, &mut entry).is_err() {
-                break;
-            }
-        }
-        let _ = windows::Win32::Foundation::CloseHandle(snap);
-        None
-    }
 }
 
 fn resolve_process_full_path(pid: u32) -> Option<String> {

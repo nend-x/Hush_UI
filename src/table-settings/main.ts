@@ -22,6 +22,8 @@ listen("table://settings-shown", () => {
   root.classList.remove("shown");
   void root.offsetWidth;
   root.classList.add("shown");
+  // Index state may have changed since the table was last open.
+  void refreshIndexStatus();
 });
 
 function close() {
@@ -172,8 +174,88 @@ toggleIconRecolor.addEventListener("change", () => {
   void emit("icon-recolor://changed", toggleIconRecolor.checked);
 });
 
+// ===== Search index + caches (0.3.0) =====
+//
+// The hushlight search walks the Start Menu + Desktop on EVERY keystroke
+// unless an index exists. The Index button builds one in the background:
+// progress rides on the notification toast (statusbar), the toast hides
+// itself 1 s after completion, and the status row refreshes via
+// index://progress events.
+const indexStatus = document.getElementById("index-status")!;
+const btnIndex = document.getElementById("btn-index") as HTMLButtonElement;
+const btnClearIndex = document.getElementById("btn-clear-index") as HTMLButtonElement;
+const btnClearIcons = document.getElementById("btn-clear-icons") as HTMLButtonElement;
+
+interface IndexStatus {
+  indexed: boolean;
+  building: boolean;
+  count: number;
+  built_at: number | null;
+}
+
+function describeStatus(s: IndexStatus): string {
+  if (s.building) return "Indexing…";
+  if (!s.indexed) return "Not indexed";
+  const when = s.built_at ? new Date(s.built_at * 1000).toLocaleDateString() : "";
+  return `Indexed: ${s.count} items${when ? ` (${when})` : ""}`;
+}
+
+async function refreshIndexStatus() {
+  try {
+    const s = await invoke<IndexStatus>("get_search_index_status");
+    indexStatus.textContent = describeStatus(s);
+    btnIndex.disabled = s.building;
+    btnIndex.textContent = s.building ? "Indexing…" : "Index";
+  } catch {}
+}
+
+btnIndex.addEventListener("click", () => {
+  if (btnIndex.disabled) return;
+  btnIndex.disabled = true;
+  btnIndex.textContent = "Indexing…";
+  indexStatus.textContent = "Indexing…";
+  invoke("build_search_index");
+});
+
+// The backend emits 0-100 while building; reflect it in the row.
+listen<{ progress: number; body?: string }>("index://progress", (e) => {
+  if (e.payload.progress < 100) {
+    indexStatus.textContent = `Indexing… ${e.payload.progress}%`;
+  } else {
+    // Build finished — the backend holds the completed toast for 1 s and
+    // hides it; pull the fresh "Indexed: N items" status.
+    setTimeout(() => void refreshIndexStatus(), 1200);
+  }
+});
+
+btnClearIndex.addEventListener("click", async () => {
+  btnClearIndex.classList.add("active");
+  try {
+    await invoke("clear_search_cache");
+    indexStatus.textContent = "Not indexed";
+  } catch {}
+  btnClearIndex.textContent = "Cleared";
+  setTimeout(() => {
+    btnClearIndex.classList.remove("active");
+    btnClearIndex.textContent = "Clear";
+  }, 900);
+});
+
+btnClearIcons.addEventListener("click", async () => {
+  btnClearIcons.classList.add("active");
+  try {
+    await invoke("clear_icon_cache");
+  } catch {}
+  btnClearIcons.textContent = "Cleared";
+  setTimeout(() => {
+    btnClearIcons.classList.remove("active");
+    btnClearIcons.textContent = "Clear";
+  }, 900);
+});
+
 // ===== Init =====
 (async function init() {
   await loadInitialTheme();
   await load();
+  await refreshIndexStatus();
 })();

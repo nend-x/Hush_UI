@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, PartialEq)]
 pub struct TaskbarApp {
     pub id: String,
     pub name: String,
@@ -14,7 +14,7 @@ pub struct TaskbarApp {
     pub is_foreground: bool,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, PartialEq)]
 pub struct DesktopItem {
     pub id: String,
     pub name: String,

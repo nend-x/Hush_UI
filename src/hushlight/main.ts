@@ -75,6 +75,10 @@ function playPopOut() {
 let results: SearchResult[] = [];
 let selected = 0;
 let searchTimer: number | null = null;
+// 0.3.0: monotonic search generation. Two overlapping invokes can resolve
+// out of order; without this guard the LAST response would win even when it
+// belongs to an older query, flickering the results list while typing.
+let searchSeq = 0;
 
 input.addEventListener("input", () => {
   if (searchTimer) window.clearTimeout(searchTimer);
@@ -84,15 +88,20 @@ input.addEventListener("input", () => {
 async function runSearch() {
   const q = input.value.trim();
   if (!q) {
+    searchSeq++;
     results = [];
     resultsEl.innerHTML = "";
     resultsEl.classList.add("hidden");
     hintEl.classList.remove("hidden");
     return;
   }
+  const seq = ++searchSeq;
   try {
-    results = await invoke<SearchResult[]>("search_programs", { query: q.toLowerCase() });
+    const found = await invoke<SearchResult[]>("search_programs", { query: q.toLowerCase() });
+    if (seq !== searchSeq) return; // a newer keystroke already superseded this response
+    results = found;
   } catch {
+    if (seq !== searchSeq) return;
     results = [];
   }
   // Field may have been cleared while the fetch was in flight.
