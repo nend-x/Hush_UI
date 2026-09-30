@@ -19,6 +19,7 @@
 
 use crate::persist::data_dir;
 use std::sync::atomic::{AtomicBool, Ordering};
+use tauri::Emitter;
 
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub struct IndexItem {

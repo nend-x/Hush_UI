@@ -72,7 +72,6 @@ fn watch_dir(dir: std::path::PathBuf, _app: tauri::AppHandle) {
         FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_NOTIFY_CHANGE_SIZE, FILE_SHARE_DELETE,
         FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
     };
-    use windows::Win32::Security::SECURITY_ATTRIBUTES;
 
     let wide: Vec<u16> = std::ffi::OsStr::new(&dir)
         .encode_wide()
@@ -84,7 +83,7 @@ fn watch_dir(dir: std::path::PathBuf, _app: tauri::AppHandle) {
             windows::core::PCWSTR(wide.as_ptr()),
             FILE_LIST_DIRECTORY.0,
             FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-            Some(SECURITY_ATTRIBUTES::default()),
+            None, // no SECURITY_ATTRIBUTES needed (result unused at link time)
             OPEN_EXISTING,
             FILE_FLAG_BACKUP_SEMANTICS,
             None,
@@ -117,7 +116,7 @@ fn watch_dir(dir: std::path::PathBuf, _app: tauri::AppHandle) {
                 None,
                 None,
             );
-            if !ok.as_bool() {
+            if ok.is_err() {
                 // Directory gone (user deleted Desktop?) — stop watching.
                 log::warn!("desktop-watch: ReadDirectoryChangesW failed for {}", dir.display());
                 break;

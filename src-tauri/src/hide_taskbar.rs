@@ -103,8 +103,8 @@ fn set_taskbars_hidden(hidden: bool) {
     if hidden {
         // Only touch windows that are new or have slipped out of the hidden
         // state — a steady-state tick costs one enumeration, nothing more.
-        let mut guard = HIDDEN_HWNS.lock().ok();
-        let known = guard.get_or_insert_with(Default::default);
+        let Some(mut known_guard) = HIDDEN_HWNS.lock().ok() else { return; };
+        let known = known_guard.get_or_insert_with(Default::default);
         let mut still: std::collections::HashSet<isize> = std::collections::HashSet::new();
         for hwnd in found {
             let key = hwnd.0 as isize;
@@ -112,10 +112,11 @@ fn set_taskbars_hidden(hidden: bool) {
             if known.contains(&key) {
                 // Fast path: already layered-hidden. Double-check alpha
                 // cheaply — if something else reset it, fall through.
+                use windows::Win32::UI::WindowsAndMessaging::LAYERED_WINDOW_ATTRIBUTES_FLAGS;
                 let mut cur_alpha: u8 = 255;
-                let mut cur_flag: u32 = 0;
-                unsafe {
-                    if windows::Win32::UI::WindowsAndMessaging::GetLayeredWindowAttributes(
+                let mut cur_flag = LAYERED_WINDOW_ATTRIBUTES_FLAGS(0);
+                let still_hidden = unsafe {
+                    windows::Win32::UI::WindowsAndMessaging::GetLayeredWindowAttributes(
                         hwnd,
                         None,
                         Some(&mut cur_alpha),
@@ -123,10 +124,10 @@ fn set_taskbars_hidden(hidden: bool) {
                     )
                     .is_ok()
                         && cur_alpha == 0
-                        && (cur_flag & LWA_ALPHA.0 != 0)
-                    {
-                        continue;
-                    }
+                        && (cur_flag.0 & LWA_ALPHA.0 != 0)
+                };
+                if still_hidden {
+                    continue;
                 }
                 // Reset — drop from the known set and re-apply below.
                 known.remove(&key);
