@@ -1,7 +1,7 @@
 #![cfg(windows)]
 // Window helpers — topmost + WS_EX_NOACTIVATE + WS_EX_TOOLWINDOW + AppBar
 
-use tauri::WebviewWindow;
+use tauri::{Manager, WebviewWindow};
 use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_FRAMECHANGED, SWP_SHOWWINDOW, GWL_EXSTYLE, GWL_STYLE,
@@ -28,6 +28,29 @@ fn hwnd_of(window: &WebviewWindow) -> HWND {
 // is itself a flicker source), so there is nothing left to flash.
 pub fn set_picker_visible(window: &WebviewWindow, visible: bool) -> windows::core::Result<()> {
     let hwnd = hwnd_of(window);
+    // 0.3.2: pair the cloak toggle with the WebView2 controller toggle
+    // (ICoreWebView2Controller::SetIsVisible via wry's Webview::hide/show).
+    // Cloaking only moves the window offscreen — the controller stayed
+    // IsVisible=true and kept feeding the WebView2 GPU process forever
+    // (measured ~14% CPU with the shell closed). Resume BEFORE uncloaking
+    // so the surface re-presents its last frame while still hidden; suspend
+    // AFTER cloaking so nothing visible can flash.
+    if let Some(wv) = window.app_handle().get_webview_window(window.label()) {
+        if visible { let _ = wv.as_ref().show(); }
+    }
+    let res = set_picker_visible_impl(visible, hwnd);
+    if !visible {
+        if let Some(wv) = window.app_handle().get_webview_window(window.label()) {
+            let _ = wv.as_ref().hide();
+        }
+    }
+    res
+}
+
+fn set_picker_visible_impl(
+    visible: bool,
+    hwnd: HWND,
+) -> windows::core::Result<()> {
     unsafe {
         // NOTE: this used to toggle WS_EX_LAYERED + SetLayeredWindowAttributes
         // alpha 0/255. Redirecting a WebView2 child surface through layered
@@ -67,6 +90,35 @@ pub fn set_picker_visible(window: &WebviewWindow, visible: bool) -> windows::cor
         }
     }
     Ok(())
+}
+
+// ===== WebView2 render suspension (0.3.2) =====
+//
+// ShowWindow(SW_HIDE) and DWM cloaking only hide the WINDOW — the WebView2
+// controller inside it kept IsVisible=true, and wry even boots every webview
+// visible (WebViewAttributes::default().visible == true) regardless of the
+// window's visible:false config. Net effect: every surface this shell owns
+// kept compositing through the WebView2 GPU process even with everything
+// "closed" — measured ~14% CPU at idle (rust side ~1%). The documented
+// off-switch is controller.SetIsVisible(false), exposed by wry as
+// Webview::hide()/show(). Every show/hide path now goes through these two
+// helpers so the window-level and controller-level toggles stay paired:
+//   hide → window first, then suspend the webview (nothing visible changes,
+//          then the renderer stops producing frames)
+//   show → resume the webview first (it re-presents its last frame
+//          instantly, so the reveal never shows a dead surface), then
+//          reveal the window
+// Suspending a page freezes its rendering but NOT its page load or JS —
+// hidden pages stay warm, so opening feels identical to before.
+pub fn show_window(win: &WebviewWindow) {
+    // AsRef<Webview> — the webview-level show() calls controller.SetIsVisible(true).
+    win.as_ref().show().ok();
+    let _ = win.show();
+}
+
+pub fn hide_window(win: &WebviewWindow) {
+    let _ = win.hide();
+    win.as_ref().hide().ok();
 }
 
 pub fn apply_no_activate(window: &WebviewWindow) -> windows::core::Result<()> {
