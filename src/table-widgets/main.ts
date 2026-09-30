@@ -33,11 +33,17 @@ listen("table://widgets-shown", () => {
   void updateSysmon();
   void loadAudio();
   void renderGreeting();
+  // 0.3.0 idle fix: polling loops (sysmon/CPU/RAM/battery, clipboard)
+  // now run ONLY while this table is on screen. The window webview stays
+  // alive when hidden, so the old bare setIntervals kept waking the IPC
+  // layer forever — the app burned CPU for data nobody could see.
+  startPolling();
 });
 
 function close() {
   if (closing) return;
   closing = true;
+  stopPolling();
   root.classList.remove("shown");
   // Let the pop-out play before the backend hides the window.
   setTimeout(() => invoke("close_table", { name: "widgets" }), 240);
@@ -81,6 +87,29 @@ listen<Record<string, boolean>>("widgets://visibility", (e) => {
   }
 });
 
+// ===== Polling lifecycle (0.3.0 idle fix) =====
+// Timers exist only between table://widgets-shown and close(). While the
+// table is hidden the webview is fully idle — zero IPC, zero wakeups.
+let sysmonTimer: number | null = null;
+let clipboardTimer: number | null = null;
+
+function startPolling() {
+  stopPolling();
+  sysmonTimer = window.setInterval(updateSysmon, 2000);
+  clipboardTimer = window.setInterval(pollClipboard, 500);
+}
+
+function stopPolling() {
+  if (sysmonTimer !== null) {
+    window.clearInterval(sysmonTimer);
+    sysmonTimer = null;
+  }
+  if (clipboardTimer !== null) {
+    window.clearInterval(clipboardTimer);
+    clipboardTimer = null;
+  }
+}
+
 // ===== Sysmon widget (visibility-gated — same idle-hang guard as the launcher)
 async function updateSysmon() {
   if (document.visibilityState !== "visible") return;
@@ -105,7 +134,6 @@ async function updateSysmon() {
   } catch {}
 
 }
-setInterval(updateSysmon, 2000);
 
 // ===== Brightness widget (systemless dim overlay) =====
 // A pure software dim: a click-through black overlay window whose alpha is
@@ -225,8 +253,6 @@ async function pollClipboard() {
     }
   } catch {}
 }
-
-setInterval(pollClipboard, 500);
 
 clipboardClearBtn.addEventListener("click", () => {
   clipboardItems = [];

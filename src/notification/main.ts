@@ -1,8 +1,12 @@
 /* =========================================================================
    Hush_UI — Notification framework (frontend)
-   Listens for notify://show / notify://hide and plays the slide-in/out.
-   Reports back with notification_close_finished when the slide-out is done
-   so the backend can hide the window.
+   Listens for notify://show / notify://progress / notify://hide and plays
+   the slide-in/out. Reports back with notification_close_finished when the
+   slide-out is done so the backend can hide the window.
+
+   0.3.0: payloads may carry `progress` (0-100) — the toast then renders a
+   statusbar (used by the search index build). Progress UPDATES arrive via
+   notify://progress and refresh the bar without replaying the slide-in.
    ========================================================================= */
 
 import { invoke } from "@tauri-apps/api/core";
@@ -11,14 +15,41 @@ import { listen } from "@tauri-apps/api/event";
 const toast = document.getElementById("toast")!;
 const titleEl = document.getElementById("toast-title")!;
 const bodyEl = document.getElementById("toast-body")!;
+const progressEl = document.getElementById("toast-progress") as HTMLElement;
+const progressFill = document.getElementById("toast-progress-fill") as HTMLElement;
 
-listen<{ title: string; body: string }>("notify://show", (e) => {
+interface ShowPayload {
+  title: string;
+  body: string;
+  progress?: number;
+}
+
+listen<ShowPayload>("notify://show", (e) => {
   titleEl.textContent = e.payload.title;
   bodyEl.textContent = e.payload.body;
+  // statusbar: only rendered when the payload carries a progress value
+  if (typeof e.payload.progress === "number") {
+    progressEl.hidden = false;
+    progressFill.style.width = `${Math.max(0, Math.min(100, e.payload.progress))}%`;
+  } else {
+    progressEl.hidden = true;
+    progressFill.style.width = "0%";
+  }
   // restart the slide-in animation
   toast.classList.remove("in", "out");
   void toast.offsetWidth;
   toast.classList.add("in");
+});
+
+// In-place progress update — no animation replay, window untouched.
+listen<{ progress?: number; body?: string }>("notify://progress", (e) => {
+  if (typeof e.payload.body === "string") {
+    bodyEl.textContent = e.payload.body;
+  }
+  if (typeof e.payload.progress === "number") {
+    progressEl.hidden = false;
+    progressFill.style.width = `${Math.max(0, Math.min(100, e.payload.progress))}%`;
+  }
 });
 
 listen("notify://hide", () => {

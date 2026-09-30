@@ -96,59 +96,123 @@ function launchWithSpin(item: LauncherItem, el: HTMLElement | null) {
   setTimeout(() => close(), LAUNCH_SPIN_MS);
 }
 
-function render() {
-  grid.innerHTML = "";
-  for (const item of items) {
-    const el = document.createElement("div");
-    el.className = "launcher-item";
-    el.dataset.id = item.id;
-    el.title = item.name;
+// ===== Keyed reconciliation (0.3.0) =====
+// The old render() wiped grid.innerHTML and rebuilt EVERY tile on every
+// launcher://items-updated — so each update replayed the item-fade-in
+// animation on all icons (the "icons moving in a weird way" bug), dropped
+// hover state, and stuttered on larger desktops. Tiles are now keyed by
+// item id: existing tiles update in place, new tiles append (and animate
+// exactly once), gone tiles are removed, and DOM order is only adjusted
+// when the scan order actually changed.
+const tiles = new Map<string, HTMLElement>();
+let emptyEl: HTMLElement | null = null;
 
-    const iconBox = document.createElement("div");
-    iconBox.className = "icon-box";
-    if (item.icon_data_url) {
-      const img = document.createElement("img");
-      img.src = item.icon_data_url;
-      img.alt = item.name;
-      img.draggable = false;
-      iconBox.appendChild(img);
+function buildTile(item: LauncherItem): HTMLElement {
+  const el = document.createElement("div");
+  el.className = "launcher-item";
+  el.dataset.id = item.id;
+
+  const iconBox = document.createElement("div");
+  iconBox.className = "icon-box";
+
+  const label = document.createElement("div");
+  label.className = "label";
+  el.appendChild(iconBox);
+  el.appendChild(label);
+
+  el.addEventListener("click", (e) => {
+    if (launching) return;
+    const current = items.find((i) => i.id === el.dataset.id);
+    if (!current) return;
+    if (e.shiftKey) {
+      invoke("execute_run_admin", { command: current.path });
     } else {
-      const fb = document.createElement("span");
-      fb.textContent = item.is_folder ? "▤" : (item.name || "?")[0].toUpperCase();
-      fb.style.cssText = "font-family:var(--font-display);font-size:16px;color:var(--sand);";
-      iconBox.appendChild(fb);
+      launchWithSpin(current, el);
     }
+  });
 
-    const label = document.createElement("div");
-    label.className = "label";
+  el.addEventListener("contextmenu", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const current = items.find((i) => i.id === el.dataset.id);
+    if (current) showItemContextMenu(e.clientX, e.clientY, current, el);
+  });
+
+  return el;
+}
+
+function updateTile(el: HTMLElement, item: LauncherItem) {
+  // Label — update only when changed (avoid layout churn).
+  const label = el.querySelector(".label") as HTMLElement;
+  if (label.textContent !== item.name) {
     label.textContent = item.name;
-
-    el.appendChild(iconBox);
-    el.appendChild(label);
-
-    el.addEventListener("click", (e) => {
-      if (launching) return;
-      if (e.shiftKey) {
-        invoke("execute_run_admin", { command: item.path });
-      } else {
-        launchWithSpin(item, el);
-      }
-    });
-
-    el.addEventListener("contextmenu", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      showItemContextMenu(e.clientX, e.clientY, item, el);
-    });
-
-    grid.appendChild(el);
+    el.title = item.name;
   }
 
+  // Icon — compare the data URL currently rendered against the new one.
+  const iconBox = el.querySelector(".icon-box") as HTMLElement;
+  const img = iconBox.querySelector("img");
+  const fb = iconBox.querySelector("span");
+  if (item.icon_data_url) {
+    if (img && img.src === item.icon_data_url) return;
+    iconBox.innerHTML = "";
+    const newImg = document.createElement("img");
+    newImg.src = item.icon_data_url;
+    newImg.alt = item.name;
+    newImg.draggable = false;
+    iconBox.appendChild(newImg);
+  } else {
+    const fallback = item.is_folder ? "▤" : (item.name || "?")[0].toUpperCase();
+    if (fb && fb.textContent === fallback) return;
+    iconBox.innerHTML = "";
+    const newFb = document.createElement("span");
+    newFb.textContent = fallback;
+    newFb.style.cssText = "font-family:var(--font-display);font-size:16px;color:var(--sand);";
+    iconBox.appendChild(newFb);
+  }
+}
+
+function render() {
+  const nextIds = new Set(items.map((i) => i.id));
+
+  // Remove tiles whose items are gone.
+  for (const [id, el] of tiles) {
+    if (!nextIds.has(id)) {
+      el.remove();
+      tiles.delete(id);
+    }
+  }
+
+  // Update or create tiles; keep DOM order in sync with the scan order
+  // (folders first, then alphabetical — the backend's deterministic sort).
+  let prev: HTMLElement | null = null;
+  for (const item of items) {
+    let el = tiles.get(item.id);
+    if (el) {
+      updateTile(el, item);
+    } else {
+      el = buildTile(item);
+      updateTile(el, item);
+      tiles.set(item.id, el);
+    }
+    // insertBefore(el, null) == appendChild, so this also appends new
+    // tiles — and only MOVES existing tiles when the order changed.
+    if (el.previousElementSibling !== prev) {
+      grid.insertBefore(el, prev ? prev.nextElementSibling : grid.firstElementChild);
+    }
+    prev = el;
+  }
+
+  // Empty state.
   if (items.length === 0) {
-    const empty = document.createElement("div");
-    empty.className = "td-empty";
-    empty.textContent = "Desktop folder is empty";
-    grid.appendChild(empty);
+    if (!emptyEl) {
+      emptyEl = document.createElement("div");
+      emptyEl.className = "td-empty";
+      emptyEl.textContent = "Desktop folder is empty";
+    }
+    if (!emptyEl.isConnected) grid.appendChild(emptyEl);
+  } else if (emptyEl?.isConnected) {
+    emptyEl.remove();
   }
 }
 

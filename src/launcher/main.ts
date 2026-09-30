@@ -123,7 +123,28 @@ async function pollClipboard() {
 }
 
 // Start polling
-setInterval(pollClipboard, 500);
+// 0.3.0 idle fix: polling is STARTED/STOPPED by launcher://force-shown and
+// launcher://force-hidden (emitted by the backend when the launcher window
+// is actually shown/hidden). No blind timers while the window is hidden.
+let clipboardPollTimer: number | null = null;
+let sysmonPollTimer: number | null = null;
+
+function startPolling() {
+  stopPolling();
+  clipboardPollTimer = window.setInterval(pollClipboard, 500);
+  sysmonPollTimer = window.setInterval(updateSysmon, 2000);
+}
+
+function stopPolling() {
+  if (clipboardPollTimer !== null) {
+    window.clearInterval(clipboardPollTimer);
+    clipboardPollTimer = null;
+  }
+  if (sysmonPollTimer !== null) {
+    window.clearInterval(sysmonPollTimer);
+    sysmonPollTimer = null;
+  }
+}
 
 // ===== Clipboard clear button =====
 clipboardClearBtn.addEventListener("click", () => {
@@ -862,11 +883,17 @@ function closeLauncher() {
 
 // External close (from Win key toggle, or close_launcher call) — animated.
 listen("launcher://force-hidden", () => {
+  // 0.3.0 idle fix: stop the clipboard/sysmon polling loops while the
+  // window is hidden. The webview stays alive, and a bare setInterval kept
+  // waking the IPC layer forever (with queued-timer burst-fires after
+  // Modern-Standby resume).
+  stopPolling();
   void hideLauncherSequence();
 });
 
 // External show (from Win key toggle) — cube first, elements after.
 listen("launcher://force-shown", () => {
+  startPolling();
   void showLauncherSequence();
 });
 
@@ -1636,8 +1663,9 @@ async function init() {
   loadClipboardWidget();
   loadNotesWidget();
   loadAudioWidget();
+  // 0.3.0 idle fix: sysmon polling now starts/stops with the window
+  // (launcher://force-shown / force-hidden) instead of running forever.
   updateSysmon();
-  setInterval(updateSysmon, 2000);
   initWidgetDragging();
   await loadWidgetPositions();
   await loadWidgetVisibilitySettings();

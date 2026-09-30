@@ -14,9 +14,11 @@
 
 mod app_state;
 pub mod crash_handler;
+mod desktop_watcher;
 mod elevation;
 mod hide_taskbar;
 mod persist;
+mod search_index;
 #[cfg(windows)]
 mod start_menu_killer;
 #[cfg(windows)]
@@ -103,6 +105,7 @@ pub fn run() {
             elevation::ElevationOutcome::Declined => {
                 // User declined the UAC prompt — keep running without
                 // elevation.
+                elevation::UAC_DECLINED.store(true, std::sync::atomic::Ordering::SeqCst);
                 log::warn!(
                     "UAC declined — launching non-elevated; the brightness dimmer may not work on system apps"
                 );
@@ -370,22 +373,33 @@ pub fn run() {
                 });
             }
 
-            // Periodic refresh — fast polling for snappy UX
+            // Desktop directory watcher (0.3.0) — files created/deleted/
+            // renamed by ANY program now reach the desktop table
+            // automatically. Debounced + emit-on-change; idle cost is zero
+            // (the watcher thread parks inside ReadDirectoryChangesW).
+            #[cfg(windows)]
+            {
+                desktop_watcher::start(app.handle().clone());
+            }
+
+            // ===== Periodic slow fallback refresh =====
+            //
+            // 0.3.0 CPU FIX: this loop used to call refresh_taskbar_apps
+            // every 2.5 s — a full EnumWindows + process-path resolution +
+            // icon pass, forever, even with nothing visible on screen. It
+            // was one of the main contributors to the ~30% idle CPU burn.
+            //
+            // Refreshes are now EVENT-DRIVEN: the WinEvent foreground hook
+            // (window switched), the taskbar strip opening, and blacklist
+            // changes all trigger immediate refreshes. This loop is only a
+            // slow SAFETY NET for events without a hook (window title
+            // changes, apps that mutate windows subtly, missed events).
             {
                 let handle = app.handle().clone();
                 std::thread::spawn(move || loop {
-                    // Fullscreen check every 500ms
-                    std::thread::sleep(std::time::Duration::from_millis(500));
-
+                    std::thread::sleep(std::time::Duration::from_secs(12));
                     #[cfg(windows)]
-                    {
-                        // The shell taskbar is gone — no fullscreen
-                        // hide/show dance needed anymore. Keep the light
-                        // taskbar-app scan alive so the taskbar TABLE
-                        // (Win-hold pie → strip) stays current.
-                        std::thread::sleep(std::time::Duration::from_millis(2000));
-                        refresh_taskbar_apps(&handle);
-                    }
+                    refresh_taskbar_apps(&handle);
                 });
             }
 
@@ -396,6 +410,23 @@ pub fn run() {
                 let callback = Box::new(move || {
                     let h = handle.clone();
                     std::thread::spawn(move || {
+                        // Debounce: a foreground switch often fires several
+                        // events in a burst (alt-tab chains, focus dances).
+                        // Each event used to spawn a full window scan — now
+                        // only the first of a 300 ms burst does.
+                        static LAST: parking_lot::Mutex<Option<std::time::Instant>> =
+                            parking_lot::const_mutex(None);
+                        let now = std::time::Instant::now();
+                        {
+                            let mut last = LAST.lock();
+                            if let Some(t) = *last {
+                                if now.duration_since(t) < std::time::Duration::from_millis(300) {
+                                    *last = Some(now);
+                                    return;
+                                }
+                            }
+                            *last = Some(now);
+                        }
                         // Small delay to let the new window settle
                         std::thread::sleep(std::time::Duration::from_millis(100));
                         refresh_taskbar_apps(&h);
@@ -448,6 +479,11 @@ pub fn run() {
             load_icon_recolor,
             save_settings,
             load_settings,
+            get_search_index_status,
+            build_search_index,
+            clear_search_cache,
+            clear_icon_cache,
+            get_elevation_state,
             set_tables_hover,
             open_table,
             close_table,
@@ -651,6 +687,7 @@ fn close_launcher(app: tauri::AppHandle) {
         if launcher.is_visible().unwrap_or(false) && !LAUNCHER_OPEN.load(Ordering::SeqCst) {
             CLOSE_SEQ.fetch_add(1, Ordering::SeqCst);
             let _ = launcher.hide();
+            let _ = app.emit("launcher://force-hidden", ());
             return;
         }
     }
@@ -835,6 +872,15 @@ fn open_taskbar_table(app: &tauri::AppHandle) {
     // right-hand zone may hang off-screen — it's fully transparent).
     const RAIL_W: f64 = 66.0;
     const STRIP_H: f64 = 5.0 * 62.0 + 14.0; // 5 icon slots + rail padding
+
+    // 0.3.0: refreshes are event-driven (no more 2.5s background scan) —
+    // opening the strip IS the event. Kick a fresh scan so the strip opens
+    // with current data; the result lands via taskbar://apps-updated and
+    // the strip reconciles incrementally.
+    {
+        let app2 = app.clone();
+        std::thread::spawn(move || refresh_taskbar_apps(&app2));
+    }
 
     let Some(strip) = app.get_webview_window("table-taskbar") else {
         log::error!("open_taskbar_table: table-taskbar window not found");
@@ -1601,6 +1647,66 @@ fn load_settings() -> persist::Settings {
     persist::load_settings()
 }
 
+// ===== Search index + cache management (0.3.0) =====
+
+#[derive(serde::Serialize)]
+struct IndexStatus {
+    indexed: bool,
+    building: bool,
+    count: usize,
+    built_at: Option<u64>,
+}
+
+#[tauri::command]
+fn get_search_index_status() -> IndexStatus {
+    let snap = search_index::snapshot();
+    IndexStatus {
+        indexed: snap.is_some(),
+        building: search_index::is_building(),
+        count: snap.as_ref().map(|i| i.len()).unwrap_or(0),
+        built_at: if snap.is_some() { Some(search_index::built_at()) } else { None },
+    }
+}
+
+/// Build the search index in a background thread. The settings table calls
+/// this from the "Index" button; progress rides on notify://progress and
+/// the toast hides itself one second after completion.
+#[tauri::command]
+fn build_search_index(app: tauri::AppHandle) {
+    std::thread::spawn(move || {
+        search_index::build(&app);
+    });
+}
+
+/// Clear the search index cache (on-disk + in-memory).
+#[tauri::command]
+fn clear_search_cache() -> bool {
+    search_index::clear()
+}
+
+/// Clear the icon cache (SHGetFileInfoW results cached per path).
+#[tauri::command]
+fn clear_icon_cache() -> usize {
+    crate::win32::icon::clear_cache()
+}
+
+/// Launch-time elevation state — used by the brightness widget's warning.
+/// (0.3.0: previously invoked but never registered, so the warning could
+/// never render.)
+#[derive(serde::Serialize)]
+struct ElevationState {
+    elevated: bool,
+    uac_declined: bool,
+}
+
+#[tauri::command]
+fn get_elevation_state() -> ElevationState {
+    ElevationState {
+        elevated: elevation::is_elevated(),
+        uac_declined: elevation::UAC_DECLINED.load(std::sync::atomic::Ordering::SeqCst),
+    }
+}
+
 // ===== Language indicator =====
 #[tauri::command]
 fn get_language() -> String {
@@ -1875,6 +1981,10 @@ fn show_launcher_for_screenshot(app: tauri::AppHandle) {
         let _ = launcher.show();
         let _ = launcher.set_focus();
         let _ = launcher.set_always_on_top(true);
+        // 0.3.0: the launcher page now starts/stops its polling loops
+        // (clipboard, sysmon, battery) on this event instead of polling
+        // blindly forever while the window sits hidden.
+        let _ = app.emit("launcher://force-shown", ());
     }
 }
 
@@ -1886,44 +1996,103 @@ fn show_launcher_for_screenshot(app: tauri::AppHandle) {
 // the frontend plays a slide-in. After `duration_ms` the backend asks the
 // frontend to play its slide-out (notify://hide) and hides the window when
 // the frontend reports back via `notification_close_finished`.
+//
+// 0.3.0: the payload can carry an optional progress value (0-100); the
+// frontend then renders a statusbar inside the toast (used by the search
+// index build). A generation counter guards the hide timer — a toast shown
+// while an older toast's timer is still pending is never hidden early.
 #[derive(serde::Serialize, Clone)]
 struct NotificationPayload {
     title: String,
     body: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    progress: Option<f32>,
 }
 
-fn show_notification(handle: &tauri::AppHandle, title: &str, body: &str, duration_ms: u64) {
-    let Some(win) = handle.get_webview_window("notification") else {
-        log::warn!("notify: notification window not found");
-        return;
-    };
+/// Monotonic toast generation — bumped on every show/update of the toast.
+static NOTIFY_SEQ: AtomicU64 = AtomicU64::new(0);
 
-    // Anchor bottom-right of the primary monitor, with a small margin.
+/// Bottom-right toast anchor height (physical px math). Must match the
+/// window height in tauri.conf.json.
+const TOAST_LOGICAL_H: f64 = 140.0;
+
+fn position_notification(win: &tauri::WebviewWindow) {
     if let Ok(Some(monitor)) = win.primary_monitor() {
         let mw = monitor.size().width as f64;
         let mh = monitor.size().height as f64;
         let scale = monitor.scale_factor();
         let lw = 340.0;
-        let lh = 116.0;
         let x = mw - lw * scale - 16.0 * scale;
-        let y = mh - lh * scale - 16.0 * scale;
+        let y = mh - TOAST_LOGICAL_H * scale - 16.0 * scale;
         let _ = win.set_position(tauri::PhysicalPosition::new(x as i32, y as i32));
     }
+}
 
-    let _ = win.show();
-    let _ = handle.emit(
-        "notify://show",
-        NotificationPayload {
-            title: title.to_string(),
-            body: body.to_string(),
-        },
+fn show_notification(handle: &tauri::AppHandle, title: &str, body: &str, duration_ms: u64) {
+    show_notification_payload(handle, NotificationPayload {
+        title: title.to_string(),
+        body: body.to_string(),
+        progress: None,
+    });
+    schedule_notification_hide(handle, duration_ms);
+}
+
+/// Show (or update) the toast with a progress statusbar. Re-showing while
+/// visible only refreshes the content — the frontend replays no animation
+/// for progress updates (it listens on notify://progress for those).
+fn show_notification_progress(app: &tauri::AppHandle, title: &str, body: &str, progress: f32) {
+    show_notification_payload(app, NotificationPayload {
+        title: title.to_string(),
+        body: body.to_string(),
+        progress: Some(progress),
+    });
+}
+
+/// Update the toast's progress bar (no slide-in replay, no window toggling).
+fn update_notification_progress(app: &tauri::AppHandle, progress: f32) {
+    let _ = app.emit("notify://progress", serde_json::json!({ "progress": progress.clamp(0.0, 100.0) }));
+}
+
+/// Mark the progress toast finished and hide it one second later
+/// (requirement: the notification disappears 1 s after the statusbar
+/// completes).
+fn finish_notification_progress(app: &tauri::AppHandle, body: String) {
+    let seq = NOTIFY_SEQ.fetch_add(1, Ordering::SeqCst) + 1;
+    let _ = app.emit(
+        "notify://progress",
+        serde_json::json!({ "progress": 100.0, "body": body, "seq": seq }),
     );
+    let h = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(1000));
+        if NOTIFY_SEQ.load(Ordering::SeqCst) == seq {
+            let _ = h.emit("notify://hide", ());
+        }
+    });
+}
 
-    // Schedule the slide-out after the requested duration.
+fn show_notification_payload(handle: &tauri::AppHandle, payload: NotificationPayload) {
+    let Some(win) = handle.get_webview_window("notification") else {
+        log::warn!("notify: notification window not found");
+        return;
+    };
+
+    NOTIFY_SEQ.fetch_add(1, Ordering::SeqCst);
+    position_notification(&win);
+    let _ = win.show();
+    let _ = handle.emit("notify://show", payload);
+}
+
+/// Schedule the slide-out after `duration_ms`, guarded by the generation
+/// counter so a toast shown later is never hidden by an older timer.
+fn schedule_notification_hide(handle: &tauri::AppHandle, duration_ms: u64) {
+    let seq = NOTIFY_SEQ.load(Ordering::SeqCst);
     let h = handle.clone();
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_millis(duration_ms));
-        let _ = h.emit("notify://hide", ());
+        if NOTIFY_SEQ.load(Ordering::SeqCst) == seq {
+            let _ = h.emit("notify://hide", ());
+        }
     });
 }
 
@@ -2112,11 +2281,14 @@ fn remove_from_startup() -> bool {
                 .join("Microsoft\\Windows\\Start Menu\\Programs\\Startup");
             let bat_path = startup_dir.join("Hush_UI.bat");
             let lnk_path = startup_dir.join("Hush_UI.lnk");
-            // Also clean up pre-rename Hush_UI shortcuts
-            let legacy_bat = startup_dir.join("Hush_UI.bat");
-            let legacy_lnk = startup_dir.join("Hush_UI.lnk");
+            // Also clean up pre-rename flatui shortcuts (the app was called
+            // flatui before Hush_UI — old startup entries must go too).
+            let legacy_bat = startup_dir.join("flatui.bat");
+            let legacy_lnk = startup_dir.join("flatui.lnk");
+            let legacy_bat2 = startup_dir.join("Flat_UI.bat");
+            let legacy_lnk2 = startup_dir.join("Flat_UI.lnk");
             let mut removed = false;
-            for path in [bat_path, lnk_path, legacy_bat, legacy_lnk] {
+            for path in [bat_path, lnk_path, legacy_bat, legacy_lnk, legacy_bat2, legacy_lnk2] {
                 if path.exists() {
                     let _ = std::fs::remove_file(&path);
                     removed = true;
@@ -2317,6 +2489,48 @@ struct SearchResult {
     is_folder: bool,
 }
 
+/// Filter + rank + disambiguate a candidate list. Shared by the indexed and
+/// the fallback walk path. Icons are NOT resolved here — the caller attaches
+/// them AFTER truncation so a keystroke costs ≤ 20 icon lookups (cache hits
+/// after the first time), never one per match.
+fn rank_search_results(
+    mut results: Vec<SearchResult>,
+    q: &str,
+) -> Vec<SearchResult> {
+    // Disambiguate colliding display names. When several results share a
+    // label, non-folder items show their full file name with extension, so
+    // a folder becomes the only entry named exactly like its siblings
+    // (mirrors the desktop grid rule).
+    {
+        let mut name_counts: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
+        for r in results.iter() {
+            *name_counts.entry(r.name.to_lowercase()).or_default() += 1;
+        }
+        for r in results.iter_mut() {
+            let count = name_counts.get(&r.name.to_lowercase()).copied().unwrap_or(0);
+            if count > 1 && !r.is_folder {
+                if let Some(fname) =
+                    std::path::Path::new(&r.path).file_name().and_then(|s| s.to_str())
+                {
+                    r.name = fname.to_string();
+                }
+            }
+        }
+    }
+
+    // Rank: the position of the query inside the name (prefix matches
+    // first), then alphabetically. Stable and cheap.
+    let ql = q.to_lowercase();
+    results.sort_by(|a, b| {
+        let ia = a.name.to_lowercase().find(&ql).unwrap_or(usize::MAX);
+        let ib = b.name.to_lowercase().find(&ql).unwrap_or(usize::MAX);
+        ia.cmp(&ib).then(a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+    results.truncate(20);
+    results
+}
+
 #[tauri::command]
 fn search_programs(query: String) -> Vec<SearchResult> {
     let q = query.trim().to_lowercase();
@@ -2326,9 +2540,6 @@ fn search_programs(query: String) -> Vec<SearchResult> {
 
     #[cfg(windows)]
     {
-        let mut results = Vec::new();
-        let mut seen_names = std::collections::HashSet::new();
-
         // 1. Built-in system shortcuts (control panel, add/remove, etc.)
         let system_shortcuts = [
             ("control panel", "control.exe"),
@@ -2383,84 +2594,84 @@ fn search_programs(query: String) -> Vec<SearchResult> {
             ("screensaver", "hushui:screensaver"),
         ];
 
+        let mut results: Vec<SearchResult> = Vec::new();
+        let mut seen_paths: std::collections::HashSet<String> = std::collections::HashSet::new();
+
         for (name, cmd) in system_shortcuts.iter() {
             if name.contains(&q) {
-                let key = name.to_lowercase();
-                if !seen_names.contains(&key) {
-                    seen_names.insert(key);
-                    results.push(SearchResult {
-                        id: format!("sys:{}", cmd),
-                        name: name.to_string(),
-                        path: cmd.to_string(),
-                        icon_data_url: None,
-                        is_folder: false,
-                    });
+                results.push(SearchResult {
+                    id: format!("sys:{}", cmd),
+                    name: name.to_string(),
+                    path: cmd.to_string(),
+                    icon_data_url: None,
+                    is_folder: false,
+                });
+            }
+        }
+
+        // 2. Filesystem candidates.
+        //
+        // FAST PATH (0.3.0): when a search index exists, filter the
+        // in-memory snapshot — no filesystem walking on the keystroke path.
+        // SLOW PATH: walk Start Menu + Desktop like before (used until the
+        // user builds an index from the settings table).
+        let mut matched: Vec<(String, String, bool)> = Vec::new(); // (name, path, is_folder)
+        if let Some(items) = search_index::snapshot() {
+            for item in items {
+                if item.name.to_lowercase().contains(&q) {
+                    matched.push((item.name, item.path, item.is_folder));
                 }
             }
-        }
-
-        // 2. Start Menu shortcuts
-        let start_menu_dirs: Vec<std::path::PathBuf> = vec![
-            std::env::var("PROGRAMDATA")
-                .map(std::path::PathBuf::from)
-                .map(|p| p.join("Microsoft\\Windows\\Start Menu\\Programs"))
-                .unwrap_or_default(),
-            std::env::var("APPDATA")
-                .map(std::path::PathBuf::from)
-                .map(|p| p.join("Microsoft\\Windows\\Start Menu\\Programs"))
-                .unwrap_or_default(),
-        ];
-
-        for dir in start_menu_dirs {
-            walk_programs(&dir, &q, &mut results, &mut seen_names, false);
-        }
-
-        // Also include Desktop items. Directory entries are included here so
-        // that a desktop FOLDER is never shadowed by a same-named .exe/.lnk —
-        // both appear as separate, individually launchable results.
-        if let Ok(desktop_dir) = std::env::var("USERPROFILE")
-            .map(std::path::PathBuf::from)
-            .map(|p| p.join("Desktop"))
-        {
-            walk_programs(&desktop_dir, &q, &mut results, &mut seen_names, true);
-        }
-
-        // Disambiguate colliding display names. The Start Menu walk recurses
-        // into Programs\Startup, so an autostart "Hush_UI.lnk" (→ flatui.exe)
-        // is returned alongside a desktop folder "flatui" and "flatui.exe"
-        // — three results that all rendered as "flatui", with the exe
-        // shortcut sorting FIRST. Picking "the flatui entry" then launched
-        // the exe instead of the folder. Same rule as the desktop grid:
-        // when several results share a label, non-folder items show their
-        // full file name with extension, so the folder becomes the only
-        // entry named exactly "flatui".
-        {
-            let mut name_counts: std::collections::HashMap<String, usize> =
-                std::collections::HashMap::new();
-            for r in results.iter() {
-                *name_counts.entry(r.name.to_lowercase()).or_default() += 1;
+        } else {
+            let start_menu_dirs: Vec<std::path::PathBuf> = vec![
+                std::env::var("PROGRAMDATA")
+                    .map(std::path::PathBuf::from)
+                    .map(|p| p.join("Microsoft\\Windows\\Start Menu\\Programs"))
+                    .unwrap_or_default(),
+                std::env::var("APPDATA")
+                    .map(std::path::PathBuf::from)
+                    .map(|p| p.join("Microsoft\\Windows\\Start Menu\\Programs"))
+                    .unwrap_or_default(),
+            ];
+            for dir in start_menu_dirs {
+                walk_programs(&dir, &q, &mut matched, true);
             }
-            for r in results.iter_mut() {
-                let count = name_counts.get(&r.name.to_lowercase()).copied().unwrap_or(0);
-                if count > 1 && !r.is_folder {
-                    if let Some(fname) =
-                        std::path::Path::new(&r.path).file_name().and_then(|s| s.to_str())
-                    {
-                        r.name = fname.to_string();
-                    }
-                }
+            // Desktop items (directories included so a desktop FOLDER is
+            // never shadowed by a same-named .exe/.lnk).
+            if let Ok(desktop_dir) = std::env::var("USERPROFILE")
+                .map(std::path::PathBuf::from)
+                .map(|p| p.join("Desktop"))
+            {
+                walk_programs(&desktop_dir, &q, &mut matched, true);
             }
         }
 
-        // Sort by the (now disambiguated) label so the folder — the only
-        // entry still named exactly "flatui" — ranks above its same-stem
-        // .lnk/.exe siblings.
-        results.sort_by(|a, b| {
-            let ia = a.name.to_lowercase().find(&q).unwrap_or(usize::MAX);
-            let ib = b.name.to_lowercase().find(&q).unwrap_or(usize::MAX);
-            ia.cmp(&ib).then(a.name.to_lowercase().cmp(&b.name.to_lowercase()))
-        });
-        results.truncate(20);
+        for (name, path, is_folder) in matched {
+            let key = path.to_lowercase();
+            if !seen_paths.insert(key) {
+                continue;
+            }
+            results.push(SearchResult {
+                id: path.clone(),
+                name,
+                path,
+                icon_data_url: None,
+                is_folder,
+            });
+        }
+
+        let mut results = rank_search_results(results, &q);
+
+        // Icons LAST: only for the visible page (≤ 20 results). The old code
+        // ran SHGetFileInfoW for every match on every keystroke — that was
+        // the lag. Repeated searches hit the icon cache.
+        for r in results.iter_mut() {
+            if r.id.starts_with("sys:") {
+                continue;
+            }
+            r.icon_data_url = crate::win32::icon::extract_icon_for_path(&r.path);
+        }
+
         return results;
     }
 
@@ -2470,14 +2681,31 @@ fn search_programs(query: String) -> Vec<SearchResult> {
     }
 }
 
+/// Depth-limited walk collecting (name, path, is_folder) matches. Icons are
+/// resolved later by the caller — this function touches the filesystem only.
 #[cfg(windows)]
 fn walk_programs(
     dir: &std::path::Path,
     q: &str,
-    results: &mut Vec<SearchResult>,
-    seen: &mut std::collections::HashSet<String>,
+    results: &mut Vec<(String, String, bool)>,
     include_dirs: bool,
 ) {
+    const MAX_DEPTH: usize = 6;
+    walk_programs_inner(dir, q, results, include_dirs, 0, MAX_DEPTH);
+}
+
+#[cfg(windows)]
+fn walk_programs_inner(
+    dir: &std::path::Path,
+    q: &str,
+    results: &mut Vec<(String, String, bool)>,
+    include_dirs: bool,
+    depth: usize,
+    max_depth: usize,
+) {
+    if depth > max_depth {
+        return;
+    }
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
         Err(_) => return,
@@ -2487,7 +2715,7 @@ fn walk_programs(
         let is_dir = path.is_dir();
         if is_dir {
             // Always recurse so nested shortcuts are still found.
-            walk_programs(&path, q, results, seen, include_dirs);
+            walk_programs_inner(&path, q, results, include_dirs, depth + 1, max_depth);
             // Directory entries themselves are only returned for desktop
             // scans, where a folder must stay launchable even when an exe
             // with the same display name exists next to it.
@@ -2518,20 +2746,10 @@ fn walk_programs(
         // shadowed by (or resolve to) a completely different .exe/.lnk that
         // merely shares the file stem.
         let key = path.to_string_lossy().to_lowercase();
-        if seen.contains(&key) {
+        if results.iter().any(|(_, p, _)| p.to_lowercase() == key) {
             continue;
         }
-        seen.insert(key);
-
-        let icon = crate::win32::icon::extract_icon_for_path(&path.to_string_lossy());
-        let path_str = path.to_string_lossy().to_string();
-        results.push(SearchResult {
-            id: path_str.clone(),
-            name,
-            path: path_str,
-            icon_data_url: icon,
-            is_folder: is_dir,
-        });
+        results.push((name, path.to_string_lossy().to_string(), is_dir));
     }
 }
 
@@ -2568,6 +2786,7 @@ fn wipe_configs() {
         "themes.json",
         "tables.json",
         "tutorial_seen.json",
+        "search_index.json",
     ];
 
     for file in &files {
@@ -2706,6 +2925,12 @@ fn refresh_taskbar_apps(handle: &tauri::AppHandle) {
                 new_order.iter().position(|id| id == &a.id).unwrap_or(usize::MAX)
             });
 
+            // 0.3.0: emit ONLY when the set actually changed. The old code
+            // re-emitted identical payloads every 2.5 s, making the strip
+            // webview diff/patch (and the IPC layer) busy for nothing.
+            if s.taskbar_apps == sorted_apps {
+                return;
+            }
             s.taskbar_apps = sorted_apps.clone();
             drop(s);
             let _ = handle.emit("taskbar://apps-updated", sorted_apps);
@@ -2718,7 +2943,16 @@ fn refresh_taskbar_apps(handle: &tauri::AppHandle) {
 fn refresh_desktop_items(handle: &tauri::AppHandle) {
     match win32::shell::scan_desktop() {
         Ok(items) => {
-            handle.state::<Arc<Mutex<AppState>>>().lock().desktop_items = items.clone();
+            let state = handle.state::<Arc<Mutex<AppState>>>();
+            let mut s = state.lock();
+            // Emit ONLY on real changes (the desktop watcher calls this for
+            // every filesystem event burst; identical snapshots must not
+            // trigger desktop-table re-renders).
+            if s.desktop_items == items {
+                return;
+            }
+            s.desktop_items = items.clone();
+            drop(s);
             let _ = handle.emit("launcher://items-updated", items);
         }
         Err(e) => log::error!("scan_desktop failed: {e}"),

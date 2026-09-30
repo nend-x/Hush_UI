@@ -54,6 +54,17 @@ pub enum ElevationOutcome {
     Declined,
 }
 
+/// Static snapshot of the launch-time elevation state — read by the
+/// `get_elevation_state` command so the brightness widget can surface the
+/// "dim may not cover elevated apps" warning. (0.3.0: this command was
+/// invoked by the widgets table but never registered in the backend —
+/// the warning could never appear.)
+#[cfg(windows)]
+pub static UAC_DECLINED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+#[cfg(not(windows))]
+pub static UAC_DECLINED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 #[cfg(windows)]
 pub fn is_elevated() -> bool {
     unsafe {

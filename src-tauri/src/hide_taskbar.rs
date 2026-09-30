@@ -40,6 +40,15 @@ use windows::Win32::UI::WindowsAndMessaging::{
 #[cfg(windows)]
 static RUNNING: AtomicBool = AtomicBool::new(false);
 
+/// HWNDs that are currently known-hidden (alpha already 0). Re-asserting
+/// alpha + RedrawWindow on explorer's windows every second used to cost
+/// real CPU (the redraw walks the tray's frame); a steady-state tick now
+/// only ENUMERATES — style/alpha are touched only for new or drifted
+/// windows (shell restart, freshly re-created tray).
+#[cfg(windows)]
+static HIDDEN_HWNS: std::sync::Mutex<Option<std::collections::HashSet<isize>>> =
+    std::sync::Mutex::new(None);
+
 
 /// Start the background thread that keeps the taskbar hidden.
 /// Safe to call once at app startup. Calling again is a no-op.
@@ -90,24 +99,66 @@ pub fn stop() {
 #[cfg(windows)]
 fn set_taskbars_hidden(hidden: bool) {
     let alpha: u8 = if hidden { 0 } else { 255 };
-    for hwnd in find_taskbar_windows() {
-        set_window_alpha(hwnd, alpha);
+    let found = find_taskbar_windows();
+    if hidden {
+        // Only touch windows that are new or have slipped out of the hidden
+        // state — a steady-state tick costs one enumeration, nothing more.
+        let Some(mut known_guard) = HIDDEN_HWNS.lock().ok() else { return; };
+        let known = known_guard.get_or_insert_with(Default::default);
+        let mut still: std::collections::HashSet<isize> = std::collections::HashSet::new();
+        for hwnd in found {
+            let key = hwnd.0 as isize;
+            still.insert(key);
+            if known.contains(&key) {
+                // Fast path: already layered-hidden. Double-check alpha
+                // cheaply — if something else reset it, fall through.
+                use windows::Win32::UI::WindowsAndMessaging::LAYERED_WINDOW_ATTRIBUTES_FLAGS;
+                let mut cur_alpha: u8 = 255;
+                let mut cur_flag = LAYERED_WINDOW_ATTRIBUTES_FLAGS(0);
+                let still_hidden = unsafe {
+                    windows::Win32::UI::WindowsAndMessaging::GetLayeredWindowAttributes(
+                        hwnd,
+                        None,
+                        Some(&mut cur_alpha),
+                        Some(&mut cur_flag),
+                    )
+                    .is_ok()
+                        && cur_alpha == 0
+                        && (cur_flag.0 & LWA_ALPHA.0 != 0)
+                };
+                if still_hidden {
+                    continue;
+                }
+                // Reset — drop from the known set and re-apply below.
+                known.remove(&key);
+            }
+            set_window_alpha(hwnd, alpha);
+            known.insert(key);
+        }
+        // Windows that disappeared — forget them.
+        known.retain(|k| still.contains(k));
+    } else {
+        for hwnd in found {
+            set_window_alpha(hwnd, alpha);
+        }
+        if let Ok(mut guard) = HIDDEN_HWNS.lock() {
+            guard.take();
+        }
     }
 }
 
 #[cfg(windows)]
 fn find_taskbar_windows() -> Vec<HWND> {
-    let mut results = Vec::new();
-    results.extend(find_windows_by_class("Shell_TrayWnd"));
-    results.extend(find_windows_by_class("Shell_SecondaryTrayWnd"));
-    results
+    // Single enumeration pass for BOTH tray classes. The old code ran
+    // EnumWindows twice per tick (once per class) — every tick, forever.
+    find_windows_by_classes(&["Shell_TrayWnd", "Shell_SecondaryTrayWnd"])
 }
 
 // Thread-local storage for the current enumeration results.
 #[cfg(windows)]
 thread_local! {
     static CURRENT_RESULTS: std::cell::RefCell<Vec<HWND>> = std::cell::RefCell::new(Vec::new());
-    static CURRENT_CLASS: std::cell::RefCell<String> = std::cell::RefCell::new(String::new());
+    static CURRENT_CLASSES: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
 #[cfg(windows)]
@@ -115,9 +166,14 @@ unsafe extern "system" fn enum_proc(hwnd: HWND, _lparam: LPARAM) -> BOOL {
     let mut class_buf = [0u16; 256];
     let len = unsafe { GetClassNameW(hwnd, &mut class_buf) };
     if len > 0 {
-        let found_class = String::from_utf16_lossy(&class_buf[..len as usize]);
-        CURRENT_CLASS.with(|cc| {
-            if found_class == *cc.borrow() {
+        // Wide compare without allocating a String per window.
+        let found = &class_buf[..len as usize];
+        CURRENT_CLASSES.with(|cc| {
+            let matches = cc.borrow().iter().any(|c| {
+                let wide: Vec<u16> = c.encode_utf16().collect();
+                wide.as_slice() == found
+            });
+            if matches {
                 CURRENT_RESULTS.with(|cr| {
                     cr.borrow_mut().push(hwnd);
                 });
@@ -128,9 +184,15 @@ unsafe extern "system" fn enum_proc(hwnd: HWND, _lparam: LPARAM) -> BOOL {
 }
 
 #[cfg(windows)]
+#[allow(dead_code)]
 fn find_windows_by_class(class_name: &str) -> Vec<HWND> {
-    CURRENT_CLASS.with(|cc| {
-        *cc.borrow_mut() = class_name.to_string();
+    find_windows_by_classes(&[class_name])
+}
+
+#[cfg(windows)]
+fn find_windows_by_classes(class_names: &[&str]) -> Vec<HWND> {
+    CURRENT_CLASSES.with(|cc| {
+        *cc.borrow_mut() = class_names.iter().map(|s| s.to_string()).collect();
     });
     CURRENT_RESULTS.with(|cr| {
         cr.borrow_mut().clear();
