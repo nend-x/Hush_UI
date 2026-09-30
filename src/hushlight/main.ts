@@ -40,6 +40,7 @@ let closing = false;
 
 listen("hushlight://shown", () => {
   closing = false;
+  cancelPendingSearch();
   input.value = "";
   resultsEl.innerHTML = "";
   resultsEl.classList.add("hidden");
@@ -55,6 +56,10 @@ listen("hushlight://hidden", () => {
 });
 
 function playPopOut() {
+  // Kill a pending search timer on every leave path (Esc, blur, launch,
+  // Win-tap) so a query never fires against a window that is already going
+  // away.
+  cancelPendingSearch();
   if (closing) return;
   closing = true;
   root.classList.remove("shown");
@@ -75,24 +80,49 @@ function playPopOut() {
 let results: SearchResult[] = [];
 let selected = 0;
 let searchTimer: number | null = null;
+// 0.3.1: searches fire on an idle cooldown instead of per keystroke. Every
+// input event resets a 1s timer, so exactly one query runs once typing has
+// settled — typing "calculator" at speed hits the backend a single time,
+// not once per letter. 0.3.0 already made each query cheap (persistent
+// index fast path, icons only for the final top-20); the cooldown removes
+// the per-letter work entirely.
+const SEARCH_IDLE_MS = 1000;
 // 0.3.0: monotonic search generation. Two overlapping invokes can resolve
 // out of order; without this guard the LAST response would win even when it
 // belongs to an older query, flickering the results list while typing.
 let searchSeq = 0;
 
+function cancelPendingSearch() {
+  if (searchTimer) {
+    window.clearTimeout(searchTimer);
+    searchTimer = null;
+  }
+}
+
+function clearResults() {
+  searchSeq++;
+  results = [];
+  resultsEl.innerHTML = "";
+  resultsEl.classList.add("hidden");
+  hintEl.classList.remove("hidden");
+}
+
 input.addEventListener("input", () => {
-  if (searchTimer) window.clearTimeout(searchTimer);
-  searchTimer = window.setTimeout(runSearch, 120);
+  cancelPendingSearch();
+  // An emptied field clears immediately — no reason to wait out the
+  // cooldown just to watch the list disappear.
+  if (!input.value.trim()) {
+    clearResults();
+    return;
+  }
+  searchTimer = window.setTimeout(runSearch, SEARCH_IDLE_MS);
 });
 
 async function runSearch() {
+  cancelPendingSearch();
   const q = input.value.trim();
   if (!q) {
-    searchSeq++;
-    results = [];
-    resultsEl.innerHTML = "";
-    resultsEl.classList.add("hidden");
-    hintEl.classList.remove("hidden");
+    clearResults();
     return;
   }
   const seq = ++searchSeq;
@@ -202,6 +232,16 @@ input.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
     e.preventDefault();
     playPopOut();
+    return;
+  }
+  // Enter during the cooldown flushes the pending query right away —
+  // without this, typing "calc" and hitting Enter immediately would find an
+  // empty list and silently do nothing until the 1s timer elapsed. When
+  // results are already on screen, Enter keeps launching the visible
+  // selection (WYSIWYG) instead of waiting for a newer query.
+  if (e.key === "Enter" && searchTimer && results.length === 0) {
+    e.preventDefault();
+    runSearch();
     return;
   }
   if (results.length === 0) return;
