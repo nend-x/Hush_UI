@@ -64,6 +64,17 @@ static TABLES_HOVERED: AtomicI32 = AtomicI32::new(0);
 // Monotonic picker generation — guards the animated dismiss delay.
 static TABLES_SEQ: AtomicU64 = AtomicU64::new(0);
 
+// Render handshake for the picker reveal (0.3.3): the webview sets this via
+// the `tables_rendered` command once the pie has been laid out at the NEW
+// anchor and a frame has been committed. The reveal waits (bounded) for it,
+// so the window can never uncloak while still showing the stale last frame
+// from the previous open — that stale frame is what made the pie appear at
+// its old dismissal spot and teleport to the cursor a moment later.
+static TABLES_RENDERED: AtomicBool = AtomicBool::new(false);
+// Bounded wait for the render handshake before revealing anyway (webview
+// wedged fallback — a stale frame still beats no pie at all).
+const TABLES_RENDER_WAIT_MS: u64 = 150;
+
 // Logical cursor position (primary-monitor-relative, CSS px) captured when
 // the picker opened — the taskbar table spawns next to it.
 static TABLES_CURSOR: Mutex<(f64, f64)> = Mutex::new((0.0, 0.0));
@@ -72,7 +83,7 @@ static TABLES_CURSOR: Mutex<(f64, f64)> = Mutex::new((0.0, 0.0));
 pub fn run() {
     // Install the crash handler BEFORE anything else — before logger init,
     // before Tauri builder, before any code that might panic. The handler
-    // spawns a separate `flatui.exe --crash-report <file>` subprocess so the
+    // spawns a separate `hush_ui.exe --crash-report <file>` subprocess so the
     // crash dialog survives the parent's death. See `crash_handler.rs`.
     crash_handler::install();
 
@@ -512,6 +523,7 @@ pub fn run() {
             clear_icon_cache,
             get_elevation_state,
             set_tables_hover,
+            tables_rendered,
             open_table,
             close_table,
             save_table_pos,
@@ -530,7 +542,7 @@ pub fn run() {
             notification_close_finished,
             show_screensaver,
             hide_screensaver,
-            exit_flatui,
+            exit_hush,
             reset_config,
             finish_tutorial,
             get_active_theme,
@@ -793,17 +805,45 @@ fn show_tables_impl(app: &tauri::AppHandle, center: bool) {
     // Bump the picker generation — cancels any in-flight animated hide so a
     // rapid hold → release → hold never races the dismiss delay.
     TABLES_SEQ.fetch_add(1, Ordering::SeqCst);
+    let seq = TABLES_SEQ.load(Ordering::SeqCst);
+    TABLES_RENDERED.store(false, Ordering::SeqCst);
 
-    // Layered-alpha reveal — the window is never hidden/shown, so the
-    // WebView2 surface never re-attaches (no light-blue flash). Topmost +
-    // NOACTIVATE are handled inside.
-    let _ = win32::window::set_picker_visible(&tables, true);
-    // Emit AFTER the window is on screen so the picker animates from a
-    // presented frame instead of racing the show.
+    // 0.3.3 reveal handshake — kills the "pie spawns at its old dismissal
+    // spot and teleports to the cursor" microframe glitch:
+    //
+    // 0.3.2 suspends the picker's WebView2 controller while hidden, and
+    // resuming the controller re-presents the LAST rendered frame — the pie
+    // still at the anchor of the previous open. The old order (reveal the
+    // window, THEN emit tables://show) uncloaked that stale frame and only
+    // let the frontend move the pie a few frames later: a visible one-shot
+    // teleport on every open after a table was chosen (the instant-dismiss
+    // path suspends before the pop-out even starts, so the stale frame was
+    // always the full pie at the old anchor).
+    //
+    // New order: resume the controller while the window is still cloaked →
+    // emit the new anchor → wait (bounded) until the webview confirms via
+    // `tables_rendered` that the pie is laid out at the NEW anchor and a
+    // frame is committed → uncloak. The first visible frame is always the
+    // correct one. DWM-cloak reveal (never hidden/shown — no WebView2
+    // surface re-attach, no light-blue flash) is unchanged.
+    let _ = win32::window::resume_picker_webview(&tables);
     let _ = app.emit(
         "tables://show",
-        serde_json::json!({ "x": ax, "y": ay, "center": center }),
+        serde_json::json!({ "x": ax, "y": ay, "center": center, "seq": seq }),
     );
+    let deadline = std::time::Instant::now()
+        + std::time::Duration::from_millis(TABLES_RENDER_WAIT_MS);
+    while !TABLES_RENDERED.load(Ordering::SeqCst)
+        && std::time::Instant::now() < deadline
+    {
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    // Reveal only if the picker is still meant to be open — a Win combo or
+    // a release-dismiss may have landed while we waited (TABLES_SEQ bumped);
+    // in that case the dismiss path owns the window state.
+    if TABLES_SEQ.load(Ordering::SeqCst) == seq {
+        let _ = win32::window::set_picker_visible(&tables, true);
+    }
 }
 
 #[cfg(not(windows))]
@@ -1036,6 +1076,17 @@ fn set_tables_hover(id: i32) {
     TABLES_HOVERED.store(id.clamp(0, 5), Ordering::SeqCst);
 }
 
+/// The picker frontend confirms it laid the pie out at the anchor of the
+/// `tables://show` with generation `seq` and committed a frame (double-rAF
+/// after the DOM write). Only a confirmation matching the CURRENT show
+/// generation is accepted — a stale one from an earlier open is ignored.
+#[tauri::command]
+fn tables_rendered(seq: u64) {
+    if seq == TABLES_SEQ.load(Ordering::SeqCst) {
+        TABLES_RENDERED.store(true, Ordering::SeqCst);
+    }
+}
+
 /// Open a table by name from the picker (click fallback — the primary
 /// gesture is hover + release Win).
 #[tauri::command]
@@ -1233,7 +1284,7 @@ fn minimize_all_windows(app: tauri::AppHandle) {
 
         struct State { skip_pid: u32 }
         let mut state = State { skip_pid: 0 };
-        // Find our own PID (flatuihush) so we skip our windows.
+        // Find our own PID (hush_ui) so we skip our windows.
         if let Some(hushlight) = app.get_webview_window("hushlight") {
             if let Ok(hwnd) = hushlight.hwnd() {
                 let mut pid: u32 = 0;
@@ -2184,8 +2235,8 @@ fn set_dimmer_level(level: f64) {
 //      desktop icons, tray)
 //   5. Exit the Hush_UI process
 #[tauri::command]
-fn exit_flatui() {
-    log::info!("exit_flatui: reverting everything and exiting");
+fn exit_hush() {
+    log::info!("exit_hush: reverting everything and exiting");
 
     // 1. Stop the start-menu killer
     #[cfg(windows)]
@@ -2614,11 +2665,11 @@ fn search_programs(query: String) -> Vec<SearchResult> {
             ("narrator", "narrator.exe"),
             ("on-screen keyboard", "osk.exe"),
             // Hush_UI commands
-            ("reboot", "flatui:reboot"),
-            ("shutdown", "flatui:shutdown"),
-            ("add flatui hush to startup", "flatui:addstartup"),
-            ("remove flatui hush from startup", "flatui:removestartup"),
-            ("screensaver", "hushui:screensaver"),
+            ("reboot", "hush:reboot"),
+            ("shutdown", "hush:shutdown"),
+            ("add hush to startup", "hush:addstartup"),
+            ("remove hush from startup", "hush:removestartup"),
+            ("screensaver", "hush:screensaver"),
         ];
 
         let mut results: Vec<SearchResult> = Vec::new();

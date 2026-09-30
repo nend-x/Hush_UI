@@ -17,7 +17,7 @@
 // exhausted, locks may be held). Instead it:
 //
 //   a) Writes the crash info (type, message, stack trace, version,
-//      timestamp) to a temp file: `%TEMP%\flatui-crash-<ms>.txt`.
+//      timestamp) to a temp file: `%TEMP%\hush-crash-<ms>.txt`.
 //   b) Spawns `<self_exe> --crash-report <tmpfile>` as a DETACHED child
 //      process (`DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP`).
 //   c) Returns — the parent then dies, but the child is independent and
@@ -30,7 +30,7 @@
 //     silently fail.
 //   - A detached child starts from a clean state and is guaranteed to be
 //     able to allocate, lock, and pump a message loop.
-//   - The child IS the same `flatui.exe` binary — when invoked with
+//   - The child IS the same `hush_ui.exe` binary — when invoked with
 //     `--crash-report <file>` it short-circuits in `main.rs` and never
 //     starts Tauri. No second binary to ship.
 //
@@ -299,7 +299,7 @@ mod imp {
             .map(|d| d.as_millis())
             .unwrap_or(0);
         let mut tmp = std::env::temp_dir();
-        tmp.push(format!("flatui-crash-{ts}.txt"));
+        tmp.push(format!("hush-crash-{ts}.txt"));
 
         if std::fs::write(&tmp, info).is_err() {
             return;
@@ -361,7 +361,7 @@ mod imp {
     }
 
     pub fn show_crash_dialog(path: &str) -> i32 {
-        eprintln!("flatui: crash report at {path} (non-Windows: no dialog)");
+        eprintln!("hush: crash report at {path} (non-Windows: no dialog)");
         if let Ok(s) = std::fs::read_to_string(path) {
             eprintln!("--- crash report ---\n{s}\n--------------------");
         }

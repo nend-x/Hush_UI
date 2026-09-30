@@ -69,7 +69,7 @@ resetBtn.addEventListener("click", () => {
 
 exitBtn.addEventListener("click", () => {
   exitBtn.classList.add("active");
-  invoke("exit_flatui");
+  invoke("exit_hush");
 });
 
 function currentSettings(): Settings {

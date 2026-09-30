@@ -61,8 +61,9 @@ pub fn scan_desktop() -> core::Result<Vec<DesktopItem>> {
         }
     }
 
-    // Disambiguate colliding display names. Both "flatui" (folder) and
-    // "flatui.exe" share the same file stem, which made the two grid tiles
+    // Disambiguate colliding display names. Two items whose display names
+    // are identical — e.g. a "widget" folder and a "widget.exe" beside it —
+    // share the same file stem, which made the two grid tiles
     // indistinguishable and invited launching the wrong item. When a
     // non-folder item shares its display name with any other item, show its
     // full file name (with extension) instead — Explorer does the same.
