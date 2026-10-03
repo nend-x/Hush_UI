@@ -46,15 +46,17 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use once_cell::sync::OnceCell;
-use windows::Win32::Foundation::{HINSTANCE, LPARAM, LRESULT, WPARAM};
+use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::System::Threading::{GetCurrentThread, SetThreadPriority, THREAD_PRIORITY_HIGHEST};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState, SendInput, INPUT, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_EXTENDEDKEY,
     KEYEVENTF_KEYUP, VIRTUAL_KEY, VK_CONTROL, VK_LMENU, VK_LWIN, VK_MENU, VK_RMENU, VK_RWIN,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CallNextHookEx, DispatchMessageW, GetMessageW, SetWindowsHookExW, TranslateMessage, HC_ACTION, KBDLLHOOKSTRUCT, LLKHF_INJECTED, MSG, WH_KEYBOARD_LL, WM_KEYDOWN, WM_KEYUP,
-    WM_SYSKEYDOWN, WM_SYSKEYUP, UnhookWindowsHookEx,
+    CallNextHookEx, DispatchMessageW, GetForegroundWindow, GetMessageW, GetWindowThreadProcessId,
+    SetWindowsHookExW, TranslateMessage, HC_ACTION, KBDLLHOOKSTRUCT, LLKHF_INJECTED, MSG,
+    WH_KEYBOARD_LL, WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP, UnhookWindowsHookEx,
 };
 
 /// Win-key behavior for the Hush_UI tables update.
@@ -85,6 +87,11 @@ type Handlers = OnceCell<HotkeyHandlers>;
 static HANDLERS: Handlers = Handlers::new();
 static WIN_PENDING: AtomicBool = AtomicBool::new(false);
 static TABLES_OPEN: AtomicBool = AtomicBool::new(false);
+
+/// The own-focus poller's previous Win down-state (edge detection). Relaxed
+/// is fine: only this thread reads/writes it, and the edges it produces are
+/// reconciled with the hook through the SeqCst flags above.
+static PREV_POLL_WIN_DOWN: AtomicBool = AtomicBool::new(false);
 
 /// Magic dwExtraInfo stamped onto every key event we inject ourselves.
 /// Low-level hooks (ours AND other apps') can read this to tell synthetic
@@ -123,6 +130,7 @@ pub fn install(handlers: HotkeyHandlers) {
         return;
     }
     spawn_hook_thread();
+    spawn_own_focus_poller();
 
     // Health-check timer: every 5s, check if the hook thread is alive.
     // If not, re-install the hook on a fresh thread. This makes the hook
@@ -147,6 +155,20 @@ fn spawn_hook_thread() {
         .name("win-key-hook".into())
         .spawn(|| unsafe {
             HOOK_ALIVE.store(true, Ordering::SeqCst);
+
+            // Deliver LL hook callbacks with as little scheduling delay as
+            // possible: WH_KEYBOARD_LL events are SendMessage'd to THIS
+            // thread by the system input thread, which only waits a bounded
+            // time (LowLevelHooksTimeout) before skipping the hook for the
+            // current event. Under heavy message traffic — exactly the case
+            // when one of our own WebView2 windows is focused — every bit of
+            // scheduling latency increases the chance the Win-down is
+            // skipped and the gesture is missed entirely (see the poller
+            // backstop below).
+            let _ = SetThreadPriority(
+                GetCurrentThread(),
+                THREAD_PRIORITY_HIGHEST,
+            );
 
             // Per MSDN, WH_KEYBOARD_LL's hMod can be NULL because the hook is
             // not injected into another process — but using the EXE's HMODULE
@@ -326,6 +348,83 @@ fn spawn_hold_detector() {
             if let Some(h) = HANDLERS.get() {
                 let f = &h.on_hold;
                 std::thread::spawn(move || f(ctrl));
+            }
+        })
+        .ok();
+}
+
+/// Own-focus Win-key poller — the gesture backstop for the one case the
+/// low-level hook demonstrably misses.
+///
+/// WHY: WH_KEYBOARD_LL callbacks are delivered via SendMessage to the hook
+/// thread, and under message traffic — especially when one of OUR OWN
+/// WebView2 windows has keyboard focus (the settings/widgets/desktop tables
+/// are focusable) — the hook can silently miss the Win-down event. The user
+/// then holds Win and nothing happens: no WIN_PENDING, no hold detector, no
+/// picker. The start-menu killer (see start_menu_killer.rs header)
+/// documents the same failure mode from the Start-menu side.
+///
+/// HOW: a 20ms poll of GetAsyncKeyState(VK_LWIN/VK_RWIN), active ONLY while
+/// GetForegroundWindow() belongs to our own process — the one case where the
+/// hook is unreliable (with any foreign window focused the hook works, and
+/// the poller is a no-op). Edges are reconciled with the hook through the
+/// same atomic flags, with swap-based exclusivity so the hook and the
+/// poller can never both fire the same gesture:
+///   - down edge, hook did not claim it (!WIN_PENDING.swap(true)) →
+///     spawn the hold detector + arm the start-menu killer (the OS DID see
+///     this Win-down, so the killer must be armed for the chord the shell
+///     is about to detect)
+///   - up edge → the same dispatch the hook's Win-up branch performs:
+///     picker open → on_tables_release, else pending → on_tap
+///
+/// The poller intentionally does NOT try to suppress anything: when the
+/// hook missed the down, the OS already has it, and the killer is the
+/// designed backstop for the Start menu. The gestures still fire in the
+/// right order, which is what the user experiences.
+fn spawn_own_focus_poller() {
+    std::thread::Builder::new()
+        .name("win-key-own-focus-poller".into())
+        .spawn(|| loop {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            unsafe {
+                let fg = GetForegroundWindow();
+                if fg.is_invalid() || fg == HWND::default() {
+                    PREV_POLL_WIN_DOWN.store(false, Ordering::Relaxed);
+                    continue;
+                }
+                let mut pid: u32 = 0;
+                GetWindowThreadProcessId(fg, Some(&mut pid));
+                if pid != std::process::id() {
+                    // Foreign window focused — the LL hook handles gestures
+                    // reliably here; keep the poller's edge state neutral.
+                    PREV_POLL_WIN_DOWN.store(false, Ordering::Relaxed);
+                    continue;
+                }
+                let down = GetAsyncKeyState(VK_LWIN.0 as i32) < 0
+                    || GetAsyncKeyState(VK_RWIN.0 as i32) < 0;
+                let prev = PREV_POLL_WIN_DOWN.swap(down, Ordering::Relaxed);
+                if down && !prev {
+                    // Down edge. If the hook saw it, WIN_PENDING is already
+                    // true and the swap below returns true — nothing to do.
+                    if !WIN_PENDING.swap(true, Ordering::SeqCst) {
+                        spawn_hold_detector();
+                        crate::start_menu_killer::arm();
+                    }
+                } else if !down && prev {
+                    // Up edge — mirror the hook's Win-up dispatch.
+                    if TABLES_OPEN.swap(false, Ordering::SeqCst) {
+                        WIN_PENDING.store(false, Ordering::SeqCst);
+                        if let Some(h) = HANDLERS.get() {
+                            let f = &h.on_tables_release;
+                            std::thread::spawn(f);
+                        }
+                    } else if WIN_PENDING.swap(false, Ordering::SeqCst) {
+                        if let Some(h) = HANDLERS.get() {
+                            let f = &h.on_tap;
+                            std::thread::spawn(f);
+                        }
+                    }
+                }
             }
         })
         .ok();
