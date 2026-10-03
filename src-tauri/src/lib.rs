@@ -74,6 +74,26 @@ static TABLES_RENDERED: AtomicBool = AtomicBool::new(false);
 // wedged fallback — a stale frame still beats no pie at all).
 const TABLES_RENDER_WAIT_MS: u64 = 150;
 
+// Hide handshake (0.4.0) — the webview sets this via the `tables_hidden`
+// command once the pie content is blanked (root visibility:hidden) and a
+// frame with that blank state has been committed. The hide paths wait
+// (bounded) for it BEFORE cloaking + suspending the controller, so the
+// surface's LAST presented frame is always blank. That is the piece 0.3.3
+// was missing: the instant-dismiss path suspended the controller before the
+// page could render anything, freezing the full pie (at the old anchor)
+// into the surface — and the show handshake's double-rAF confirm can fire
+// before the compositor actually presents the re-laid-out frame, so the
+// uncloak still raced a one-frame "pie at the old position" flash. With a
+// blank last frame, resuming on the next open re-presents NOTHING visible
+// — the stale frame can no longer exist, regardless of handshake timing.
+static TABLES_HIDDEN: AtomicBool = AtomicBool::new(false);
+// Bounded waits for the hide handshake (webview wedged fallback — cloaking
+// a never-confirmed window just means the stale frame is the blank-in-
+// progress one; both bounds exceed the normal confirm latency by a lot).
+const TABLES_HIDE_ANIMATED_FLOOR_MS: u64 = 280; // pop-out must finish
+const TABLES_HIDE_ANIMATED_CAP_MS: u64 = 340;
+const TABLES_HIDE_INSTANT_CAP_MS: u64 = 120;
+
 // Logical cursor position (primary-monitor-relative, CSS px) captured when
 // the picker opened — the taskbar table spawns next to it.
 static TABLES_CURSOR: Mutex<(f64, f64)> = Mutex::new((0.0, 0.0));
@@ -515,6 +535,7 @@ pub fn run() {
             get_elevation_state,
             set_tables_hover,
             tables_rendered,
+            tables_hidden,
             open_table,
             close_table,
             save_table_pos,
@@ -842,17 +863,36 @@ fn prefit_tables_window(tables: &tauri::WebviewWindow) {
 }
 
 /// Dismiss the picker with its pop-out animation: emit `tables://hide` (the
-/// frontend scales the buttons back down), then hide the window once the
-/// transition had time to play. Generation-guarded against a re-open
-/// landing inside the delay.
+/// frontend scales the buttons back down, blanks the root once it ends and
+/// confirms via `tables_hidden`), then hide the window once the pop-out had
+/// time to play AND the blank frame is committed. Generation-guarded against
+/// a re-open landing inside the delay.
 #[cfg(windows)]
 fn hide_tables_impl(app: &tauri::AppHandle) {
     if let Some(_tables) = app.get_webview_window("tables") {
         let seq = TABLES_SEQ.fetch_add(1, Ordering::SeqCst) + 1;
-        let _ = app.emit("tables://hide", ());
+        TABLES_HIDDEN.store(false, Ordering::SeqCst);
+        let _ = app.emit(
+            "tables://hide",
+            serde_json::json!({ "seq": seq, "instant": false }),
+        );
         let handle = app.clone();
         std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(280));
+            // Hide handshake (animated): wait at least the pop-out duration
+            // (280ms floor — 140ms transitions + 80ms stagger + margin), and
+            // normally until the page confirms the blank frame; the 340ms
+            // cap only matters if the webview is wedged (a transparent
+            // overlay with blank content is invisible either way, so the
+            // worst case costs nothing visible).
+            let start = std::time::Instant::now();
+            let floor = std::time::Duration::from_millis(TABLES_HIDE_ANIMATED_FLOOR_MS);
+            let cap = std::time::Duration::from_millis(TABLES_HIDE_ANIMATED_CAP_MS);
+            while start.elapsed() < cap {
+                if start.elapsed() >= floor && TABLES_HIDDEN.load(Ordering::SeqCst) {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
             if TABLES_SEQ.load(Ordering::SeqCst) == seq {
                 let _ = handle
                     .get_webview_window("tables")
@@ -867,12 +907,40 @@ fn hide_tables_impl(_app: &tauri::AppHandle) {}
 
 /// Instantly dismiss the picker (used when a table is opening right away —
 /// the new table provides the visual transition).
+///
+/// 0.4.0: the old behavior cloaked + suspended the controller RIGHT HERE —
+/// before the page could render anything — so the surface's last presented
+/// frame stayed the full pie at the current anchor. Resuming on the next
+/// open re-presented exactly that stale frame, and the show handshake's
+/// double-rAF confirm can win its race BEFORE the compositor presents the
+/// re-laid-out frame: a one-frame "pie at the old position" flash survived
+/// 0.3.3. Now: emit the instant hide (the page blanks its root immediately)
+/// and wait (bounded) for the `tables_hidden` confirm before cloak+suspend —
+/// the surface freezes on a blank frame and no stale pie can ever be
+/// re-presented. Visible cost: the pie vanishes ~2 frames later than before
+/// (the opened table provides the transition anyway).
 #[cfg(windows)]
 fn hide_tables_now(app: &tauri::AppHandle) {
-    TABLES_SEQ.fetch_add(1, Ordering::SeqCst);
-    if let Some(tables) = app.get_webview_window("tables") {
-        let _ = app.emit("tables://hide", ());
-        let _ = win32::window::set_picker_visible(&tables, false);
+    let seq = TABLES_SEQ.fetch_add(1, Ordering::SeqCst) + 1;
+    if let Some(_tables) = app.get_webview_window("tables") {
+        TABLES_HIDDEN.store(false, Ordering::SeqCst);
+        let _ = app.emit(
+            "tables://hide",
+            serde_json::json!({ "seq": seq, "instant": true }),
+        );
+        let handle = app.clone();
+        std::thread::spawn(move || {
+            let start = std::time::Instant::now();
+            let cap = std::time::Duration::from_millis(TABLES_HIDE_INSTANT_CAP_MS);
+            while start.elapsed() < cap && !TABLES_HIDDEN.load(Ordering::SeqCst) {
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
+            if TABLES_SEQ.load(Ordering::SeqCst) == seq {
+                let _ = handle
+                    .get_webview_window("tables")
+                    .map(|w| win32::window::set_picker_visible(&w, false));
+            }
+        });
     }
 }
 
@@ -1055,6 +1123,19 @@ fn set_tables_hover(id: i32) {
 fn tables_rendered(seq: u64) {
     if seq == TABLES_SEQ.load(Ordering::SeqCst) {
         TABLES_RENDERED.store(true, Ordering::SeqCst);
+    }
+}
+
+/// The picker frontend confirms the pie content is BLANKED (root
+/// visibility:hidden) and a frame with that blank state has been committed
+/// (double-rAF after the visibility write). Only a confirmation matching the
+/// CURRENT generation is accepted — a stale one from an earlier hide is
+/// ignored, and a re-open bumps the generation so the show path owns the
+/// window state again (see the hide handshake comment on TABLES_HIDDEN).
+#[tauri::command]
+fn tables_hidden(seq: u64) {
+    if seq == TABLES_SEQ.load(Ordering::SeqCst) {
+        TABLES_HIDDEN.store(true, Ordering::SeqCst);
     }
 }
 
