@@ -25,6 +25,9 @@ const slices = Array.from(document.querySelectorAll<SVGGElement>(".pie-slice"));
 const hubClock = document.getElementById("pie-clock") as unknown as SVGTextElement;
 
 let hoverTask: number | null = null;
+// Pending animated-hide blanking timer — cancelled when a new show arrives,
+// so a stale hide can never blank a freshly re-opened picker.
+let hideBlankTimer: number | null = null;
 
 // ===== Pie geometry ======================================================
 // Five equal 72° wedges radiating from the anchor point, clockwise from
@@ -178,6 +181,15 @@ async function loadClockFormat() {
 
 listen<ShowPayload>("tables://show", (e) => {
   const { x, y, seq } = e.payload;
+  // Cancel any pending hide-path blanking (rapid hide → re-open): the show
+  // generation owns the surface now; a late hide timer must not blank it.
+  if (hideBlankTimer !== null) {
+    window.clearTimeout(hideBlankTimer);
+    hideBlankTimer = null;
+  }
+  // Undo the hide-path blanking FIRST — the pie must be back in the render
+  // tree for this frame's layout and for the pop-in transition to play.
+  root.style.visibility = "";
   // Anchor point → CSS vars for the vignette + the pie layout.
   root.style.setProperty("--pick-x", `${x}px`);
   root.style.setProperty("--pick-y", `${y}px`);
@@ -195,6 +207,10 @@ listen<ShowPayload>("tables://show", (e) => {
   // next painted frame includes today's layout; the setTimeout is a belt-
   // and-braces confirmation in case the rAF pipeline is still spinning up
   // right after the controller resume (the backend wait is bounded anyway).
+  // 0.4.0: the backend ALSO blanks the picker before every suspend (hide
+  // handshake), so the re-presented "stale frame" is now blank regardless —
+  // this handshake remains as the latency optimization (reveal as soon as
+  // the correct frame exists), no longer as the correctness guarantee.
   const confirmRendered = () => invoke("tables_rendered", { seq });
   requestAnimationFrame(() => requestAnimationFrame(confirmRendered));
   window.setTimeout(confirmRendered, 120);
@@ -211,10 +227,46 @@ listen<boolean>("icon-recolor://changed", (e) => {
   document.documentElement.classList.toggle("icon-recolor", e.payload);
 });
 
-listen("tables://hide", () => {
+interface HidePayload {
+  // Picker generation the backend assigned to this hide — echoed back by
+  // tables_hidden so a stale confirmation can never satisfy a newer hide.
+  seq: number;
+  // true = instant dismiss (a table is opening): blank the root in THIS
+  // frame. false = release-dismiss: let the pop-out play first.
+  instant: boolean;
+}
+
+listen<HidePayload>("tables://hide", (e) => {
+  const { seq, instant } = e.payload;
   root.classList.remove("shown");
   slices.forEach((s) => s.classList.remove("hover"));
   stopHubClock();
+
+  // 0.4.0 hide handshake — the critical half of the flash fix. The backend
+  // suspends the picker's WebView2 controller right after this confirm:
+  // whatever frame the surface presented LAST is what the next open's
+  // controller resume re-presents. If we suspended while the pie was still
+  // rendered, the next open would show the pie at the OLD anchor for a
+  // frame before the (raced) show handshake could move it — the residual
+  // spawn-position flash. So: blank the root (visibility:hidden keeps
+  // layout — the hub clock's getComputedTextLength still works — but
+  // removes every pixel from the next presented frame) and only tell the
+  // backend once a blank frame is actually committed (double-rAF).
+  const confirmHidden = () => invoke("tables_hidden", { seq });
+  const blankAndConfirm = () => {
+    root.style.visibility = "hidden";
+    requestAnimationFrame(() => requestAnimationFrame(confirmHidden));
+  };
+  if (instant) {
+    // Table chosen — blank in THIS frame (the opened table provides the
+    // visual transition); the backend cloak+suspend lands ~2 frames later.
+    blankAndConfirm();
+  } else {
+    // Release-dismiss — let the pop-out play (~260ms incl. stagger), then
+    // blank + confirm. The backend won't cloak before its 280ms floor
+    // anyway, and cancels this entirely if a new show arrives first.
+    hideBlankTimer = window.setTimeout(blankAndConfirm, 260);
+  }
 });
 
 // Apply the active theme + recolor state at startup (the picker loads

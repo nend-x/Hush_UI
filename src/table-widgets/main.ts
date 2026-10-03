@@ -33,7 +33,6 @@ listen("table://widgets-shown", () => {
   void updateSysmon();
   void loadAudio();
   void renderGreeting();
-  void renderTray();
   // 0.3.0 idle fix: polling loops (sysmon/CPU/RAM/battery, clipboard)
   // now run ONLY while this table is on screen. The window webview stays
   // alive when hidden, so the old bare setIntervals kept waking the IPC
@@ -68,7 +67,6 @@ const WIDGET_IDS = [
   "sysmon-widget",
   "audio-widget",
   "brightness-widget",
-  "tray-widget",
 ] as const;
 
 async function applyVisibility() {
@@ -94,13 +92,11 @@ listen<Record<string, boolean>>("widgets://visibility", (e) => {
 // table is hidden the webview is fully idle — zero IPC, zero wakeups.
 let sysmonTimer: number | null = null;
 let clipboardTimer: number | null = null;
-let trayTimer: number | null = null;
 
 function startPolling() {
   stopPolling();
   sysmonTimer = window.setInterval(updateSysmon, 2000);
   clipboardTimer = window.setInterval(pollClipboard, 500);
-  trayTimer = window.setInterval(renderTray, 5000);
 }
 
 function stopPolling() {
@@ -111,10 +107,6 @@ function stopPolling() {
   if (clipboardTimer !== null) {
     window.clearInterval(clipboardTimer);
     clipboardTimer = null;
-  }
-  if (trayTimer !== null) {
-    window.clearInterval(trayTimer);
-    trayTimer = null;
   }
 }
 
@@ -286,79 +278,6 @@ notesTextarea.addEventListener("input", () => {
     invoke("save_notes", { text: notesTextarea.value });
   }, 500);
 });
-
-// ===== Tray widget (BETA) =====
-// Icons are read out of explorer's notification-area toolbar (get_tray_items,
-// gated by the settings beta toggle — empty list when off). Left-click
-// activates the app, right-click opens the app's OWN tray context menu by
-// forwarding a real right-click to the tray button (tray_click). The tray
-// changes on its own (apps come and go), so refresh while the table is open.
-const trayIcons = document.getElementById("tray-icons")!;
-const trayEmpty = document.getElementById("tray-empty")!;
-
-interface TrayItem {
-  index: number;
-  process: string;
-  icon_data_url: string | null;
-}
-
-async function renderTray() {
-  if (document.getElementById("tray-widget")?.style.display === "none") return;
-  if (document.visibilityState !== "visible") return;
-  let items: TrayItem[] = [];
-  try {
-    items = await invoke<TrayItem[]>("get_tray_items");
-  } catch {
-    return; // backend hiccup — keep the last rendering
-  }
-
-  // Read the gate so the empty state is honest: "off" (the settings toggle)
-  // vs "on but nothing enumerable" (the documented beta caveat on some
-  // Windows builds). Both used to render the same "Tray is off" line, which
-  // made an enabled-but-empty tray look like the toggle did nothing.
-  let trayOn = false;
-  try {
-    const s = await invoke<{ tray_enabled?: boolean }>("load_settings");
-    trayOn = s.tray_enabled ?? false;
-  } catch {}
-
-  trayIcons.innerHTML = "";
-  trayEmpty.hidden = items.length > 0;
-  trayEmpty.textContent = trayOn
-    ? "Tray is on — no tray icons found (Beta)"
-    : "Tray is off — enable it in settings (Beta)";
-
-  for (const item of items) {
-    const el = document.createElement("div");
-    el.className = "tray-icon";
-    el.title = `${item.process} — left-click: activate, right-click: menu`;
-    if (item.icon_data_url) {
-      const img = document.createElement("img");
-      img.src = item.icon_data_url;
-      img.alt = item.process;
-      img.draggable = false;
-      el.appendChild(img);
-    } else {
-      const fb = document.createElement("span");
-      fb.className = "tray-fallback";
-      fb.textContent = (item.process || "?")[0].toUpperCase();
-      el.appendChild(fb);
-    }
-    el.addEventListener("click", () => {
-      invoke("tray_click", { index: item.index, button: "left" });
-    });
-    el.addEventListener("contextmenu", (e) => {
-      e.preventDefault();
-      invoke("tray_click", { index: item.index, button: "right" });
-    });
-    trayIcons.appendChild(el);
-  }
-}
-
-// Live reaction to the beta toggle (settings broadcast) and to the generic
-// settings://changed payload — either way the widget flips immediately.
-listen<boolean>("tray://enabled", () => void renderTray());
-listen<{ tray_enabled?: boolean }>("settings://changed", () => void renderTray());
 
 // Theme + icon recolor come from the shared module — colors and per-theme
 // icon-recolor values are always applied together.

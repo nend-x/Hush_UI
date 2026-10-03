@@ -44,7 +44,6 @@ interface Settings {
   tables_hold_ms?: number;
   clock_24h?: boolean;
   show_desktop_grid?: boolean;
-  tray_enabled?: boolean;
 }
 
 const WIDGET_IDS = [
@@ -53,7 +52,6 @@ const WIDGET_IDS = [
   "sysmon-widget",
   "audio-widget",
   "brightness-widget",
-  "tray-widget",
 ] as const;
 
 const sliderHold = document.getElementById("slider-hold") as HTMLInputElement;
@@ -61,7 +59,6 @@ const holdVal = document.getElementById("hold-val")!;
 const themeSelect = document.getElementById("theme-select") as HTMLSelectElement;
 const toggleIconRecolor = document.getElementById("toggle-icon-recolor") as HTMLInputElement;
 const segClock = document.getElementById("seg-clock")!;
-const toggleTray = document.getElementById("toggle-tray") as HTMLInputElement;
 const resetBtn = document.getElementById("mt-reset")!;
 const exitBtn = document.getElementById("mt-exit")!;
 
@@ -79,7 +76,6 @@ function currentSettings(): Settings {
   return {
     tables_hold_ms: parseInt(sliderHold.value, 10),
     clock_24h: segClock.querySelector("button.active")?.getAttribute("data-value") === "24",
-    tray_enabled: toggleTray.checked,
   };
 }
 
@@ -94,7 +90,6 @@ async function load() {
     sliderHold.value = String(s.tables_hold_ms ?? 80);
     holdVal.textContent = `${sliderHold.value} ms`;
     setSegClock(s.clock_24h ?? true);
-    toggleTray.checked = s.tray_enabled ?? false;
   } catch {}
 
   try {
@@ -170,12 +165,6 @@ themeSelect.addEventListener("change", async () => {
   await invoke("set_active_theme", { name: themeSelect.value });
   const theme = await invoke<Theme | null>("get_active_theme").catch(() => null);
   if (theme) applyTheme(theme);
-});
-
-// ===== Tray (beta) — save + broadcast so an open widgets table flips live =====
-toggleTray.addEventListener("change", () => {
-  saveSettings();
-  void emit("tray://enabled", toggleTray.checked);
 });
 
 // ===== Icon recolor (apply locally + broadcast — same as launcher) =====
