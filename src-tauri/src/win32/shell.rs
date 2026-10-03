@@ -56,6 +56,7 @@ pub fn scan_desktop() -> core::Result<Vec<DesktopItem>> {
                     path: path.to_string_lossy().to_string(),
                     icon_data_url: icon,
                     is_folder,
+                    pinned: false,
                 });
             }
         }
@@ -277,6 +278,7 @@ pub fn create_item(name: &str, is_folder: bool) -> core::Result<DesktopItem> {
         path: final_path.to_string_lossy().to_string(),
         icon_data_url: extract_icon_for_path(&final_path.to_string_lossy()),
         is_folder,
+        pinned: false,
     })
 }
 
@@ -293,6 +295,14 @@ pub fn delete_item(item_id: &str) -> core::Result<()> {
             .map_err(|e| core::Error::new(HRESULT(-1), format!("remove_file: {}", e)))?;
     }
     Ok(())
+}
+
+/// Keep a pin attached across a rename: the pin store is keyed by the
+/// absolute path, so a pinned item that gets renamed would silently drop
+/// out of the pinned group. Re-key it here.
+fn persist_pin(new_path: &std::path::Path) -> bool {
+    let key = new_path.to_string_lossy().to_string();
+    crate::persist::load_desktop_pins().contains(&key)
 }
 
 pub fn rename_item(item_id: &str, new_name: &str) -> core::Result<DesktopItem> {
@@ -312,5 +322,6 @@ pub fn rename_item(item_id: &str, new_name: &str) -> core::Result<DesktopItem> {
         path: new_path.to_string_lossy().to_string(),
         icon_data_url: extract_icon_for_path(&new_path.to_string_lossy()),
         is_folder: new_path.is_dir(),
+        pinned: persist_pin(&new_path),
     })
 }

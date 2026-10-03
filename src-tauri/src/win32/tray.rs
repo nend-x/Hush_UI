@@ -55,18 +55,19 @@ use windows::Win32::System::Threading::{
     OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_VM_OPERATION, PROCESS_VM_READ,
     PROCESS_VM_WRITE,
 };
-use windows::Win32::UI::Controls::{
-    ImageList_GetIcon, ILD_TRANSPARENT, IMAGE_LIST_DRAW_STYLE,
-};
+use windows::Win32::UI::Controls::{ImageList_GetIcon, ILD_TRANSPARENT};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     SendInput, INPUT, INPUT_0, INPUT_MOUSE, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP,
-    MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP, MOUSEINPUT,
+    MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP, MOUSEINPUT, MOUSE_EVENT_FLAGS,
 };
+use windows::Win32::Foundation::HWND;
+use windows::Win32::Graphics::Gdi::ClientToScreen;
+use windows::Win32::UI::Controls::HIMAGELIST;
+use windows::Win32::System::Diagnostics::Debug::ReadProcessMemory;
 use windows::Win32::UI::WindowsAndMessaging::{
-    ClientToScreen, FindWindowExW, GetClassNameW, GetCursorPos, GetWindowThreadProcessId,
-    SendMessageW, SetCursorPos, EnumChildWindows, DestroyIcon, HWND, LRESULT,
+    FindWindowExW, GetClassNameW, GetCursorPos, GetWindowThreadProcessId,
+    SendMessageW, SetCursorPos, EnumChildWindows, DestroyIcon,
 };
-use windows::Win32::Graphics::Gdi::HIMAGELIST;
 // Toolbar messages (WM_USER range) — stable since forever, defined here so
 // we don't depend on codegen quirks for constants the crate may not expose.
 const TB_GETBUTTON: u32 = 0x0400 + 23;
@@ -220,8 +221,11 @@ impl Remote {
                 4096,
                 MEM_COMMIT | MEM_RESERVE,
                 PAGE_READWRITE,
-            )
-            .ok()?;
+            );
+            if buf.is_null() {
+                let _ = windows::Win32::Foundation::CloseHandle(handle);
+                return None;
+            }
             Some(Remote { handle, buf })
         }
     }
@@ -231,7 +235,7 @@ impl Remote {
             ReadProcessMemory(
                 self.handle,
                 addr as _,
-                Some(out.as_mut_ptr() as _),
+                out.as_mut_ptr() as _,
                 out.len(),
                 None,
             )
@@ -249,7 +253,6 @@ impl Drop for Remote {
     }
 }
 
-use windows::Win32::System::Memory::ReadProcessMemory;
 
 /// pid → exe file name (one snapshot; same pattern as apps.rs).
 fn build_pid_exe_map() -> HashMap<u32, String> {
@@ -295,7 +298,7 @@ fn enumerate_entries() -> Vec<TrayEntry> {
 
     for toolbar in collect_toolbars() {
         let count = unsafe {
-            SendMessageW(toolbar, TB_BUTTONCOUNT, WPARAM(0), LPARAM(0)).0 as usize
+            SendMessageW(toolbar, TB_BUTTONCOUNT, Some(WPARAM(0)), Some(LPARAM(0))).0 as usize
         };
         // The toolbar belongs to explorer — open the scratch buffer on ITS pid.
         let mut pid: u32 = 0;
@@ -314,8 +317,8 @@ fn enumerate_entries() -> Vec<TrayEntry> {
                 SendMessageW(
                     toolbar,
                     TB_GETBUTTON,
-                    WPARAM(i),
-                    LPARAM(remote.buf as isize),
+                    Some(WPARAM(i)),
+                    Some(LPARAM(remote.buf as isize)),
                 );
             }
             let mut raw = [0u8; std::mem::size_of::<Tbbutton>()];
@@ -371,9 +374,11 @@ pub fn enumerate_tray_icons() -> Vec<TrayItemInfo> {
         unsafe { GetWindowThreadProcessId(HWND(e.owner_hwnd as *mut _), Some(&mut pid)) };
         let process = pid_exe.get(&pid).cloned().unwrap_or_else(|| "unknown".into());
 
-        let icon_data_url = *ICON_CACHE.lock().entry((e.owner_hwnd, e.uid)).or_insert_with(
-            || extract_icon(e.toolbar, e.local_index),
-        );
+        let icon_data_url = ICON_CACHE
+        .lock()
+        .entry((e.owner_hwnd, e.uid))
+        .or_insert_with(|| extract_icon(e.toolbar, e.local_index))
+        .clone();
         infos.push(TrayItemInfo {
             index,
             process,
@@ -387,16 +392,15 @@ pub fn enumerate_tray_icons() -> Vec<TrayItemInfo> {
 /// processes — the same route AutoHotkey's tray helpers take).
 fn extract_icon(toolbar: HWND, local_index: usize) -> Option<String> {
     unsafe {
-        let himl = SendMessageW(toolbar, TB_GETIMAGELIST, WPARAM(0), LPARAM(0)).0;
+        let himl = SendMessageW(toolbar, TB_GETIMAGELIST, Some(WPARAM(0)), Some(LPARAM(0))).0;
         if himl == 0 {
             return None;
         }
         let hicon = ImageList_GetIcon(
-            HIMAGELIST(himl as *mut _),
+            HIMAGELIST(himl),
             local_index as i32,
-            IMAGE_LIST_DRAW_STYLE(ILD_TRANSPARENT.0),
-        )
-        .ok()?;
+            ILD_TRANSPARENT,
+        );
         let png = hicon_to_png(hicon);
         let _ = DestroyIcon(hicon);
         png
@@ -423,8 +427,8 @@ pub fn click_tray_icon(index: usize, right: bool) -> Result<(), String> {
         SendMessageW(
             e.toolbar,
             TB_GETITEMRECT,
-            WPARAM(e.local_index),
-            LPARAM(remote.buf as isize),
+            Some(WPARAM(e.local_index)),
+            Some(LPARAM(remote.buf as isize)),
         );
     }
     let mut raw = [0u8; std::mem::size_of::<RECT>()];
@@ -446,7 +450,9 @@ pub fn click_tray_icon(index: usize, right: bool) -> Result<(), String> {
         y: (rect.top + rect.bottom) / 2,
     };
     unsafe {
-        ClientToScreen(e.toolbar, &mut point).map_err(|e| e.to_string())?;
+        if !ClientToScreen(e.toolbar, &mut point).as_bool() {
+            return Err("ClientToScreen failed".into());
+        }
 
         let mut orig = POINT::default();
         let _ = GetCursorPos(&mut orig);
@@ -476,7 +482,7 @@ fn send_mouse(flags: u32) {
                 dx: 0,
                 dy: 0,
                 mouseData: 0,
-                dwFlags: flags,
+                dwFlags: MOUSE_EVENT_FLAGS(flags),
                 time: 0,
                 dwExtraInfo: 0,
             },
