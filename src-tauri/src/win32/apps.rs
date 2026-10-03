@@ -236,6 +236,20 @@ unsafe extern "system" fn enum_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
     let mut pid: u32 = 0;
     GetWindowThreadProcessId(hwnd, Some(&mut pid));
 
+    // Ignore the Windows Input Experience host (the touch-keyboard/IME
+    // shell surface). Its CoreWindow is visible, tool-style and carries a
+    // LOCALIZED title ("Windows Input Experience" and friends), so it used
+    // to show up in the taskbar strip as a ghost entry. Match the process
+    // name, never the title — the title follows the system language.
+    if state
+        .pid_exe
+        .get(&pid)
+        .map(|exe| exe.eq_ignore_ascii_case("WindowsInputExperience.exe"))
+        .unwrap_or(false)
+    {
+        return BOOL(1);
+    }
+
     // Resolve the exe path from the prebuilt map. Full-path resolution
     // (OpenProcess + QueryFullProcessImageNameW) is still per unique pid —
     // deduped so five windows of one app cost one resolution.
