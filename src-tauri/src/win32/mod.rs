@@ -11,6 +11,7 @@ pub mod winevent;
 pub mod hotkey;
 pub mod table_mouse;
 pub mod dimmer;
+pub mod tray;
 
 // Win-key tap-vs-combo handling lives in `hotkey.rs`. It installs a
 // low-level keyboard hook (WH_KEYBOARD_LL) that SWALLOWS Win-down (so the

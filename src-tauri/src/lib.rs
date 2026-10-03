@@ -23,7 +23,6 @@ mod search_index;
 mod start_menu_killer;
 #[cfg(windows)]
 mod win32;
-
 use parking_lot::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, Ordering};
 use std::sync::Arc;
@@ -486,6 +485,8 @@ pub fn run() {
             rename_desktop_item,
             refresh_desktop,
             set_desktop_item_pinned,
+            get_tray_items,
+            tray_click,
             minimize_all_windows,
             execute_run,
             execute_run_admin,
@@ -1243,6 +1244,59 @@ fn set_desktop_item_pinned(item_id: String, pinned: bool, app: tauri::AppHandle)
     refresh_desktop_items(&app);
 }
 
+// ===== Tray widget (BETA — settings toggle, off by default) =====
+//
+// Reads the notification-area icons explorer hosts (see win32::tray for the
+// full route: legacy tray toolbar + a read-only scratch buffer inside
+// explorer) and forwards clicks back to the real tray buttons so the apps'
+// own context menus open. Both commands no-op (empty / false) unless the
+// beta toggle is on — the gate is re-read per call, so flipping the toggle
+// in settings takes effect immediately, no restart.
+#[derive(serde::Serialize)]
+struct TrayItemInfo {
+    index: usize,
+    process: String,
+    icon_data_url: Option<String>,
+}
+
+#[tauri::command]
+fn get_tray_items() -> Vec<TrayItemInfo> {
+    if !persist::load_settings().tray_enabled {
+        return Vec::new();
+    }
+    #[cfg(windows)]
+    {
+        win32::tray::enumerate_tray_icons()
+            .into_iter()
+            .map(|i| TrayItemInfo {
+                index: i.index,
+                process: i.process,
+                icon_data_url: i.icon_data_url,
+            })
+            .collect()
+    }
+    #[cfg(not(windows))]
+    {
+        Vec::new()
+    }
+}
+
+#[tauri::command]
+fn tray_click(index: usize, button: String) -> bool {
+    if !persist::load_settings().tray_enabled {
+        return false;
+    }
+    #[cfg(windows)]
+    {
+        win32::tray::click_tray_icon(index, button == "right").is_ok()
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (index, button);
+        false
+    }
+}
+
 // ===== Minimize all windows =====
 #[tauri::command]
 fn minimize_all_windows(app: tauri::AppHandle) {
@@ -1645,6 +1699,10 @@ fn save_settings(settings: serde_json::Value, app: tauri::AppHandle) {
     if let Some(v) = settings.get("dimmer_level").and_then(|v| v.as_f64()) {
         current.dimmer_level = v.clamp(0.0, 1.0);
     }
+    // --- Tray beta (0.4) ---
+    if let Some(v) = settings.get("tray_enabled").and_then(|v| v.as_bool()) {
+        current.tray_enabled = v;
+    }
     persist::save_settings(&current);
 
     // The hold threshold lives in the keyboard hook — keep it in sync.
@@ -1663,6 +1721,7 @@ fn save_settings(settings: serde_json::Value, app: tauri::AppHandle) {
         serde_json::json!({
             "clock_24h": current.clock_24h,
             "show_desktop_grid": current.show_desktop_grid,
+            "tray_enabled": current.tray_enabled,
         }),
     );
     log::info!("Settings saved — theme: {}", current.theme);
