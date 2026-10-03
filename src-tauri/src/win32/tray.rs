@@ -66,7 +66,9 @@ use windows::Win32::UI::Controls::HIMAGELIST;
 use windows::Win32::System::Diagnostics::Debug::ReadProcessMemory;
 use windows::Win32::UI::WindowsAndMessaging::{
     FindWindowExW, GetClassNameW, GetCursorPos, GetWindowThreadProcessId,
-    SendMessageW, SetCursorPos, EnumChildWindows, DestroyIcon,
+    SendMessageW, SetCursorPos, EnumChildWindows, DestroyIcon, SendMessageTimeoutW,
+    GetClassLongPtrW, HICON, GCLP_HICON, GCLP_HICONSM, SMTO_ABORTIFHUNG,
+    WM_GETICON, ICON_SMALL, ICON_SMALL2, ICON_BIG,
 };
 // Toolbar messages (WM_USER range) — stable since forever, defined here so
 // we don't depend on codegen quirks for constants the crate may not expose.
@@ -124,6 +126,10 @@ struct TrayEntry {
     toolbar: HWND,
     owner_hwnd: usize,
     uid: u32,
+    /// The button's own index into the toolbar image list — NOT the button's
+    /// position in the toolbar (the two are unrelated; the previous build
+    /// used the position, which grabbed wrong/blank icons).
+    i_bitmap: i32,
     local_index: usize,
 }
 
@@ -170,6 +176,25 @@ fn collect_toolbars() -> Vec<HWND> {
                 Ok(h) if h.0 as usize != 0 => {
                     enum_toolbars_under(h, &mut out);
                     after_island = h;
+                }
+                _ => break,
+            }
+        }
+        // Win10 overflow flyout (the chevron "^" window — icons that are not
+        // promoted to the main tray live here).
+        let class_overflow = w("NotifyIconOverflowWindow");
+        let mut after_overflow = HWND::default();
+        loop {
+            let flyout = FindWindowExW(
+                None,
+                Some(after_overflow),
+                PCWSTR(class_overflow.as_ptr()),
+                PCWSTR::null(),
+            );
+            match flyout {
+                Ok(h) if h.0 as usize != 0 => {
+                    enum_toolbars_under(h, &mut out);
+                    after_overflow = h;
                 }
                 _ => break,
             }
@@ -353,6 +378,7 @@ fn enumerate_entries() -> Vec<TrayEntry> {
                 toolbar,
                 owner_hwnd,
                 uid,
+                i_bitmap: tbb.i_bitmap,
                 local_index: i,
             });
         }
@@ -374,11 +400,22 @@ pub fn enumerate_tray_icons() -> Vec<TrayItemInfo> {
         unsafe { GetWindowThreadProcessId(HWND(e.owner_hwnd as *mut _), Some(&mut pid)) };
         let process = pid_exe.get(&pid).cloned().unwrap_or_else(|| "unknown".into());
 
-        let icon_data_url = ICON_CACHE
-        .lock()
-        .entry((e.owner_hwnd, e.uid))
-        .or_insert_with(|| extract_icon(e.toolbar, e.local_index))
-        .clone();
+        let icon_data_url = {
+            let mut cache = ICON_CACHE.lock();
+            match cache.get(&(e.owner_hwnd, e.uid)) {
+                Some(cached) => cached.clone(),
+                None => {
+                    let fresh = extract_icon(e.toolbar, e.i_bitmap, e.owner_hwnd);
+                    // Only successes are cached: a failed decode (hung owner,
+                    // transient GDI trouble) retries on the next poll instead
+                    // of poisoning its slot with None forever.
+                    if fresh.is_some() {
+                        cache.insert((e.owner_hwnd, e.uid), fresh.clone());
+                    }
+                    fresh
+                }
+            }
+        };
         infos.push(TrayItemInfo {
             index,
             process,
@@ -388,22 +425,58 @@ pub fn enumerate_tray_icons() -> Vec<TrayItemInfo> {
     infos
 }
 
-/// TB_GETIMAGELIST + ImageList_GetIcon → PNG data URL (handle-safe across
-/// processes — the same route AutoHotkey's tray helpers take).
-fn extract_icon(toolbar: HWND, local_index: usize) -> Option<String> {
+/// Icon for one tray button. Primary source: the toolbar's shared image
+/// list, indexed by the BUTTON'S OWN bitmap index (tbb.iBitmap — the button
+/// position is unrelated and produced wrong/blank icons). If that route
+/// yields nothing, fall back to the owner window's own icons: WM_GETICON
+/// (small2 / small / big) then the class icons — HICONs are shared GDI
+/// handles, so they cross the process boundary read-only. All owner probes
+/// are time-boxed so a hung window can never stall the widget's poll.
+fn extract_icon(toolbar: HWND, i_bitmap: i32, owner_hwnd: usize) -> Option<String> {
     unsafe {
-        let himl = SendMessageW(toolbar, TB_GETIMAGELIST, Some(WPARAM(0)), Some(LPARAM(0))).0;
-        if himl == 0 {
-            return None;
+        if i_bitmap >= 0 {
+            let himl = SendMessageW(toolbar, TB_GETIMAGELIST, Some(WPARAM(0)), Some(LPARAM(0))).0;
+            if himl != 0 {
+                let hicon = ImageList_GetIcon(HIMAGELIST(himl), i_bitmap, ILD_TRANSPARENT);
+                if !hicon.is_invalid() {
+                    let png = hicon_to_png(hicon);
+                    let _ = DestroyIcon(hicon);
+                    if png.is_some() {
+                        return png;
+                    }
+                }
+            }
         }
-        let hicon = ImageList_GetIcon(
-            HIMAGELIST(himl),
-            local_index as i32,
-            ILD_TRANSPARENT,
-        );
-        let png = hicon_to_png(hicon);
-        let _ = DestroyIcon(hicon);
-        png
+
+        let hwnd = HWND(owner_hwnd as *mut _);
+        for wp in [ICON_SMALL2, ICON_SMALL, ICON_BIG] {
+            let mut result = usize::default();
+            let _ = SendMessageTimeoutW(
+                hwnd,
+                WM_GETICON,
+                WPARAM(wp as usize),
+                LPARAM(0),
+                SMTO_ABORTIFHUNG,
+                100,
+                Some(&mut result),
+            );
+            if result != 0 {
+                let png = hicon_to_png(HICON(result as *mut _));
+                if png.is_some() {
+                    return png;
+                }
+            }
+        }
+        for gclp in [GCLP_HICONSM, GCLP_HICON] {
+            let handle = GetClassLongPtrW(hwnd, gclp);
+            if handle != 0 {
+                let png = hicon_to_png(HICON(handle as *mut _));
+                if png.is_some() {
+                    return png;
+                }
+            }
+        }
+        None
     }
 }
 

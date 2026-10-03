@@ -312,8 +312,21 @@ async function renderTray() {
     return; // backend hiccup — keep the last rendering
   }
 
+  // Read the gate so the empty state is honest: "off" (the settings toggle)
+  // vs "on but nothing enumerable" (the documented beta caveat on some
+  // Windows builds). Both used to render the same "Tray is off" line, which
+  // made an enabled-but-empty tray look like the toggle did nothing.
+  let trayOn = false;
+  try {
+    const s = await invoke<{ tray_enabled?: boolean }>("load_settings");
+    trayOn = s.tray_enabled ?? false;
+  } catch {}
+
   trayIcons.innerHTML = "";
   trayEmpty.hidden = items.length > 0;
+  trayEmpty.textContent = trayOn
+    ? "Tray is on — no tray icons found (Beta)"
+    : "Tray is off — enable it in settings (Beta)";
 
   for (const item of items) {
     const el = document.createElement("div");

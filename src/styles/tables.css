@@ -591,6 +591,15 @@
 
 .mt-widgets .widget {
   position: static;
+  /* Neutralize EVERY launcher-canvas leftover (the launcher positions
+     widgets absolutely across its own surface: .notes-widget left/top,
+     .audio-widget left:50%+translateX, …). Without this any widget that
+     only got a partial override renders shifted inside the table. */
+  left: auto;
+  right: auto;
+  top: auto;
+  bottom: auto;
+  transform: none;
   width: 100%;
   max-height: none;
   box-shadow: none;
