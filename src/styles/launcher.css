@@ -322,8 +322,12 @@ html.background-ready, html.background-ready body {
 
 /* ===== Spinning icon animation (replaces fullscreen expand) =====
    When user clicks an app to launch it, the icon spins until the app
-   has finished initializing (we get a "ready" signal from the backend). */
-.launcher-item.launching .icon-box {
+   has finished initializing (we get a "ready" signal from the backend).
+   Scoped to #launcher: launcher.css is loaded by every table window for
+   the shared tile styles, and an unscoped `.launching` rule leaked the
+   infinite spin into the desktop table (its own spin is a finite 3s
+   td-icon-spin) — icons there kept spinning forever after a launch. */
+#launcher .launcher-item.launching .icon-box {
   animation: icon-spin 1.2s linear infinite;
   border-color: var(--accent-terracotta);
   box-shadow: 0 0 20px rgba(var(--accent-terracotta-rgb), 0.40),
@@ -335,7 +339,7 @@ html.background-ready, html.background-ready body {
   100% { transform: rotate(360deg); }
 }
 
-.launcher-item.launching .label {
+#launcher .launcher-item.launching .label {
   color: var(--text-primary);
   animation: label-fade 200ms var(--ease-out-soft) forwards;
 }
