@@ -121,6 +121,9 @@ pub struct Settings {
     /// Taskbar clock format — true = 24h, false = 12h (segmented control).
     #[serde(default = "default_true")]
     pub clock_24h: bool,
+    /// Show the local-time clock in the center hub of the pie picker.
+    #[serde(default = "default_true")]
+    pub pie_clock: bool,
     /// Hide the desktop icons inside the launcher grid (toggle).
     #[serde(default = "default_true")]
     pub show_desktop_grid: bool,
@@ -152,6 +155,7 @@ fn default_settings() -> Settings {
         cube_animation: true,
         tables_hold_ms: 80,
         clock_24h: true,
+        pie_clock: true,
         show_desktop_grid: true,
     }
 }

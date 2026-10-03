@@ -22,8 +22,6 @@ listen("table://settings-shown", () => {
   root.classList.remove("shown");
   void root.offsetWidth;
   root.classList.add("shown");
-  // Index state may have changed since the table was last open.
-  void refreshIndexStatus();
 });
 
 function close() {
@@ -43,6 +41,7 @@ document.addEventListener("keydown", (e) => {
 interface Settings {
   tables_hold_ms?: number;
   clock_24h?: boolean;
+  pie_clock?: boolean;
   show_desktop_grid?: boolean;
 }
 
@@ -59,6 +58,7 @@ const holdVal = document.getElementById("hold-val")!;
 const themeSelect = document.getElementById("theme-select") as HTMLSelectElement;
 const toggleIconRecolor = document.getElementById("toggle-icon-recolor") as HTMLInputElement;
 const segClock = document.getElementById("seg-clock")!;
+const togglePieClock = document.getElementById("toggle-pie-clock") as HTMLInputElement;
 const resetBtn = document.getElementById("mt-reset")!;
 const exitBtn = document.getElementById("mt-exit")!;
 
@@ -76,6 +76,7 @@ function currentSettings(): Settings {
   return {
     tables_hold_ms: parseInt(sliderHold.value, 10),
     clock_24h: segClock.querySelector("button.active")?.getAttribute("data-value") === "24",
+    pie_clock: togglePieClock.checked,
   };
 }
 
@@ -90,6 +91,7 @@ async function load() {
     sliderHold.value = String(s.tables_hold_ms ?? 80);
     holdVal.textContent = `${sliderHold.value} ms`;
     setSegClock(s.clock_24h ?? true);
+    togglePieClock.checked = s.pie_clock ?? true;
   } catch {}
 
   try {
@@ -167,6 +169,12 @@ themeSelect.addEventListener("change", async () => {
   if (theme) applyTheme(theme);
 });
 
+// ===== Pie hub clock — persist + broadcast (the pie re-pulls per show too,
+// but the broadcast keeps any open surfaces in sync immediately) =====
+togglePieClock.addEventListener("change", () => {
+  saveSettings();
+});
+
 // ===== Icon recolor (apply locally + broadcast — same as launcher) =====
 toggleIconRecolor.addEventListener("change", () => {
   document.documentElement.classList.toggle("icon-recolor", toggleIconRecolor.checked);
@@ -174,72 +182,10 @@ toggleIconRecolor.addEventListener("change", () => {
   void emit("icon-recolor://changed", toggleIconRecolor.checked);
 });
 
-// ===== Search index + caches (0.3.0) =====
-//
-// The hushlight search walks the Start Menu + Desktop on EVERY keystroke
-// unless an index exists. The Index button builds one in the background:
-// progress rides on the notification toast (statusbar), the toast hides
-// itself 1 s after completion, and the status row refreshes via
-// index://progress events.
-const indexStatus = document.getElementById("index-status")!;
-const btnIndex = document.getElementById("btn-index") as HTMLButtonElement;
-const btnClearIndex = document.getElementById("btn-clear-index") as HTMLButtonElement;
+// ===== Icon cache maintenance =====
+// Search-result icons are extracted via SHGetFileInfoW and cached per path;
+// this just drops the cache (they are re-extracted on demand).
 const btnClearIcons = document.getElementById("btn-clear-icons") as HTMLButtonElement;
-
-interface IndexStatus {
-  indexed: boolean;
-  building: boolean;
-  count: number;
-  built_at: number | null;
-}
-
-function describeStatus(s: IndexStatus): string {
-  if (s.building) return "Indexing…";
-  if (!s.indexed) return "Not indexed";
-  const when = s.built_at ? new Date(s.built_at * 1000).toLocaleDateString() : "";
-  return `Indexed: ${s.count} items${when ? ` (${when})` : ""}`;
-}
-
-async function refreshIndexStatus() {
-  try {
-    const s = await invoke<IndexStatus>("get_search_index_status");
-    indexStatus.textContent = describeStatus(s);
-    btnIndex.disabled = s.building;
-    btnIndex.textContent = s.building ? "Indexing…" : "Index";
-  } catch {}
-}
-
-btnIndex.addEventListener("click", () => {
-  if (btnIndex.disabled) return;
-  btnIndex.disabled = true;
-  btnIndex.textContent = "Indexing…";
-  indexStatus.textContent = "Indexing…";
-  invoke("build_search_index");
-});
-
-// The backend emits 0-100 while building; reflect it in the row.
-listen<{ progress: number; body?: string }>("index://progress", (e) => {
-  if (e.payload.progress < 100) {
-    indexStatus.textContent = `Indexing… ${e.payload.progress}%`;
-  } else {
-    // Build finished — the backend holds the completed toast for 1 s and
-    // hides it; pull the fresh "Indexed: N items" status.
-    setTimeout(() => void refreshIndexStatus(), 1200);
-  }
-});
-
-btnClearIndex.addEventListener("click", async () => {
-  btnClearIndex.classList.add("active");
-  try {
-    await invoke("clear_search_cache");
-    indexStatus.textContent = "Not indexed";
-  } catch {}
-  btnClearIndex.textContent = "Cleared";
-  setTimeout(() => {
-    btnClearIndex.classList.remove("active");
-    btnClearIndex.textContent = "Clear";
-  }, 900);
-});
 
 btnClearIcons.addEventListener("click", async () => {
   btnClearIcons.classList.add("active");
@@ -257,5 +203,4 @@ btnClearIcons.addEventListener("click", async () => {
 (async function init() {
   await loadInitialTheme();
   await load();
-  await refreshIndexStatus();
 })();

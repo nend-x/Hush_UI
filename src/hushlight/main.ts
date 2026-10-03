@@ -81,12 +81,12 @@ let results: SearchResult[] = [];
 let selected = 0;
 let searchTimer: number | null = null;
 // 0.3.1: searches fire on an idle cooldown instead of per keystroke. Every
-// input event resets a 1s timer, so exactly one query runs once typing has
-// settled — typing "calculator" at speed hits the backend a single time,
-// not once per letter. 0.3.0 already made each query cheap (persistent
-// index fast path, icons only for the final top-20); the cooldown removes
-// the per-letter work entirely.
-const SEARCH_IDLE_MS = 1000;
+// input event resets a 500ms timer, so exactly one query runs once typing
+// has settled — typing "calculator" at speed hits the backend a single
+// time, not once per letter. 0.4.0: halved from 1s to 500ms — the old
+// delay read as lag; the walk is cheap enough at this cadence. The
+// monotonic seq below keeps out-of-order responses harmless either way.
+const SEARCH_IDLE_MS = 500;
 // 0.3.0: monotonic search generation. Two overlapping invokes can resolve
 // out of order; without this guard the LAST response would win even when it
 // belongs to an older query, flickering the results list while typing.

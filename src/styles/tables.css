@@ -89,9 +89,10 @@
 .tables-root.shown .pie-hub   { fill-opacity: 1; stroke-opacity: 1; }
 
 /* Hub clock — lives inside the center hub, ticks every second while
-   the pie is open. Opacity follows the hub's pop-in. */
+   the pie is open. Same color as the table icons (their stroke color).
+   Opacity follows the hub's pop-in. */
 .pie-clock {
-  fill: var(--text-muted);
+  fill: var(--text-secondary);
   font-family: var(--font-display);
   font-size: 14px;
   letter-spacing: 0.02em;

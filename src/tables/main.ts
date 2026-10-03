@@ -133,6 +133,10 @@ root.addEventListener("mousedown", () => {
 // every second; the interval dies with the picker so the hidden window
 // never wakes its (suspended) webview for nothing.
 let clock24h = true;
+// Pie hub clock toggle (settings). Read fresh on every show — the pie is
+// suspended while hidden, so a settings change while closed is picked up
+// on the next open without any live-update machinery.
+let pieClockOn = true;
 let clockTimer: number | null = null;
 
 function formatNow(): string {
@@ -174,8 +178,9 @@ function stopHubClock() {
 
 async function loadClockFormat() {
   try {
-    const s = await invoke<{ clock_24h?: boolean }>("load_settings");
+    const s = await invoke<{ clock_24h?: boolean; pie_clock?: boolean }>("load_settings");
     clock24h = s.clock_24h ?? true;
+    pieClockOn = s.pie_clock ?? true;
   } catch {}
 }
 
@@ -214,10 +219,18 @@ listen<ShowPayload>("tables://show", (e) => {
   const confirmRendered = () => invoke("tables_rendered", { seq });
   requestAnimationFrame(() => requestAnimationFrame(confirmRendered));
   window.setTimeout(confirmRendered, 120);
-  // Tick from the moment the pie pops in; re-pull the format every show
-  // so a settings change while running is picked up without a restart.
-  void loadClockFormat().then(renderHubClock);
-  startHubClock();
+  // Tick from the moment the pie pops in; re-pull format + clock toggle
+  // every show so a settings change while the pie was closed is picked up
+  // without a restart.
+  void loadClockFormat().then(() => {
+    hubClock.style.display = pieClockOn ? "" : "none";
+    if (pieClockOn) {
+      renderHubClock();
+      startHubClock();
+    } else {
+      stopHubClock();
+    }
+  });
 });
 
 listen<ThemePayload>("theme://changed", (e) => {
