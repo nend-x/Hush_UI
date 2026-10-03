@@ -130,6 +130,14 @@ pub struct Settings {
     /// nothing on the system is modified. Default: off.
     #[serde(default)]
     pub dimmer_level: f64,
+    /// BETA: tray widget — reads the notification-area (tray) icons that
+    /// explorer hosts (legacy toolbar route, see win32::tray) and shows
+    /// them in the widgets table; clicks are forwarded back to the real
+    /// tray buttons. Off by default — this pokes around in explorer's
+    /// memory (read-only scratch buffer) and is feature-gated until it
+    /// proves itself in the wild.
+    #[serde(default)]
+    pub tray_enabled: bool,
 }
 
 fn default_tables_hold_ms() -> u64 { 80 }
@@ -153,6 +161,7 @@ fn default_settings() -> Settings {
         tables_hold_ms: 80,
         clock_24h: true,
         show_desktop_grid: true,
+        tray_enabled: false,
     }
 }
 
