@@ -67,9 +67,10 @@ document.addEventListener("keydown", (e) => {
 let items: LauncherItem[] = [];
 
 // While a launch animation is playing the grid ignores further clicks and
-// the window closes right after the spin finishes. Same 3s ceiling the
-// launcher uses to guarantee the spin can never stick around.
-const LAUNCH_SPIN_MS = 3000;
+// the window closes right after the spin finishes. The launching class is
+// dropped when the spin ends (and swept on desktop-shown), so it can never
+// stick around across a close/reopen cycle.
+const LAUNCH_SPIN_MS = 1000;
 let launching = false;
 
 async function refresh() {
@@ -86,7 +87,7 @@ listen<LauncherItem[]>("launcher://items-updated", (e) => {
   render();
 });
 
-/// Launch an item and play the 3s spin animation on its icon, then close
+/// Launch an item and play the 1s spin animation on its icon, then close
 /// the desktop table. `el` is the tile that was clicked (null for the
 /// context-menu "Open" path when the tile reference is unavailable).
 function launchWithSpin(item: LauncherItem, el: HTMLElement | null) {
@@ -98,7 +99,7 @@ function launchWithSpin(item: LauncherItem, el: HTMLElement | null) {
     // Re-trigger the spin even if the tile was re-rendered between clicks.
     void el.offsetWidth;
   }
-  // After the 3s spin → drop the launching class (it must never outlive
+  // After the 1s spin → drop the launching class (it must never outlive
   // the spin, the window is only hidden and its DOM persists) → close the
   // desktop table (its own pop-out plays before the backend hides it).
   setTimeout(() => {
