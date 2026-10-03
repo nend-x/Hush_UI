@@ -382,6 +382,18 @@ html.background-ready, html.background-ready body {
 
 /* Animated top-edge sweep — a thin gradient line that slides across
    the top of the icon on hover. Uses a ::before pseudo-element. */
+.launcher-item.pinned .icon-box::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-terracotta);
+  z-index: 2;
+}
+
 .launcher-item .icon-box::before {
   content: "";
   position: absolute;

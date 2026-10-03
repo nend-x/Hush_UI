@@ -1,7 +1,7 @@
 // Persistence — load/save config files
 //
 // Config path (Hush_UI): %LOCALAPPDATA%\Hush_UI\
-//   clipboard.json, notes.txt, widgets.json,
+//   clipboard.json, notes.txt, widgets.json, desktop_pins.json,
 //   widget_visibility.json, icon_recolor.json, settings.json,
 //   themes.json, tables.json
 //
@@ -185,7 +185,32 @@ pub fn load_table_positions() -> std::collections::HashMap<String, (i32, i32)> {
 
 pub fn save_table_positions(positions: &std::collections::HashMap<String, (i32, i32)>) {
     let path = data_dir().join("tables.json");
-    if let Ok(s) = serde_json::to_string_pretty(positions) {
+    if let Ok(s) = serde_json::to_string(&positions) {
+        let _ = fs::write(&path, s);
+    }
+}
+
+// ===== Desktop pins =====
+//
+// "Pin to top" on the desktop-table context menu. Pins are stored as the
+// item ids (absolute paths — same id the scan produces), in pin order:
+// the first pinned id floats to the very top of the grid, the rest keep
+// their pin order behind it.
+fn desktop_pins_path() -> PathBuf {
+    data_dir().join("desktop_pins.json")
+}
+
+pub fn load_desktop_pins() -> Vec<String> {
+    let path = desktop_pins_path();
+    match fs::read_to_string(&path) {
+        Ok(s) => serde_json::from_str(&s).unwrap_or_default(),
+        Err(_) => Vec::new(),
+    }
+}
+
+pub fn save_desktop_pins(pins: &[String]) {
+    let path = desktop_pins_path();
+    if let Ok(s) = serde_json::to_string(pins) {
         let _ = fs::write(&path, s);
     }
 }

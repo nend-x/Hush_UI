@@ -22,6 +22,11 @@ pub struct DesktopItem {
     #[serde(rename = "icon_data_url")]
     pub icon_data_url: Option<String>,
     pub is_folder: bool,
+    /// True when the user pinned this item to the top of the grid.
+    /// Persisted separately (desktop_pins.json); always serialized so
+    /// every consumer (frontend tiles included) sees a stable field.
+    #[serde(default)]
+    pub pinned: bool,
 }
 
 pub struct AppState {

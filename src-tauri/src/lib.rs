@@ -485,6 +485,7 @@ pub fn run() {
             delete_desktop_item,
             rename_desktop_item,
             refresh_desktop,
+            set_desktop_item_pinned,
             minimize_all_windows,
             execute_run,
             execute_run_admin,
@@ -1221,6 +1222,24 @@ fn rename_desktop_item(item_id: String, new_name: String, app: tauri::AppHandle)
 
 #[tauri::command]
 fn refresh_desktop(app: tauri::AppHandle) {
+    refresh_desktop_items(&app);
+}
+
+// ===== Desktop pin/unpin ("Pin to top" in the desktop-table menu) =====
+#[tauri::command]
+fn set_desktop_item_pinned(item_id: String, pinned: bool, app: tauri::AppHandle) {
+    log::info!("set_desktop_item_pinned: {item_id} pinned={pinned}");
+    let mut pins = persist::load_desktop_pins();
+    if pinned {
+        if !pins.contains(&item_id) {
+            pins.push(item_id);
+        }
+    } else {
+        pins.retain(|p| p != &item_id);
+    }
+    persist::save_desktop_pins(&pins);
+    // Rescan reapplies the pin flags + ordering and emits
+    // launcher://items-updated only when the snapshot actually changed.
     refresh_desktop_items(&app);
 }
 
@@ -2673,6 +2692,7 @@ fn wipe_configs() {
         "notes.txt",
         "widgets.json",
         "widget_visibility.json",
+        "desktop_pins.json",
         "icon_recolor.json",
         "settings.json",
         "themes.json",
