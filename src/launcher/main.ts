@@ -1,5 +1,5 @@
 /* =========================================================================
-   LAUNCHER main — Spotlight + run dialog + window switcher + blacklist
+   LAUNCHER main — Spotlight + run dialog + window switcher
    ========================================================================= */
 
 import { invoke } from "@tauri-apps/api/core";
@@ -65,8 +65,6 @@ const audioMasterVal = document.getElementById("audio-master-val")!;
 const settingsBtn = document.getElementById("settings-btn")!;
 const settingsOverlay = document.getElementById("settings-overlay")!;
 const settingsClose = document.getElementById("settings-close")!;
-const screenshotOverlay = document.getElementById("screenshot-overlay")!;
-const screenshotCanvas = document.getElementById("screenshot-canvas") as HTMLCanvasElement;
 const clipboardClearBtn = document.getElementById("clipboard-clear")!;
 
 // Widget toggle checkboxes
@@ -1515,133 +1513,6 @@ function showDialog(
 }
 
 // ===== Settings =====
-// ===== Screenshot =====
-// Listen for screenshot events from taskbar button
-listen<string>("screenshot://taken", (event) => {
-  startScreenshotWithData(event.payload);
-});
-
-async function startScreenshotWithData(dataUrl: string) {
-    screenshotOverlay.classList.remove("hidden");
-    const ctx = screenshotCanvas.getContext("2d")!;
-    const img = new Image();
-
-    // Map viewport (CSS px) coordinates to native screenshot pixels so the
-    // crop is 1:1 with the real screen regardless of DPI scaling (Lightshot-style).
-    const toImgCoords = (clientX: number, clientY: number) => {
-      const rect = screenshotCanvas.getBoundingClientRect();
-      const sx = img.naturalWidth / rect.width;
-      const sy = img.naturalHeight / rect.height;
-      return { x: (clientX - rect.left) * sx, y: (clientY - rect.top) * sy };
-    };
-
-    img.onload = () => {
-      // Backing store at native screenshot resolution; the canvas ELEMENT is
-      // stretched over the window by CSS, so the preview stays full-screen.
-      screenshotCanvas.width = img.naturalWidth;
-      screenshotCanvas.height = img.naturalHeight;
-      ctx.drawImage(img, 0, 0);
-      // Dim the screenshot
-      ctx.fillStyle = "rgba(0, 0, 0, 0.3)";
-      ctx.fillRect(0, 0, screenshotCanvas.width, screenshotCanvas.height);
-    };
-    img.src = dataUrl;
-
-    let isSelecting = false;
-    let startX = 0, startY = 0;
-
-    screenshotCanvas.onmousedown = (e) => {
-      isSelecting = true;
-      const p = toImgCoords(e.clientX, e.clientY);
-      startX = p.x;
-      startY = p.y;
-    };
-
-    screenshotCanvas.onmousemove = (e) => {
-      if (!isSelecting) return;
-      const p = toImgCoords(e.clientX, e.clientY);
-      const x = Math.min(startX, p.x);
-      const y = Math.min(startY, p.y);
-      const w = Math.abs(p.x - startX);
-      const h = Math.abs(p.y - startY);
-      // Redraw
-      ctx.clearRect(0, 0, screenshotCanvas.width, screenshotCanvas.height);
-      ctx.drawImage(img, 0, 0);
-      ctx.fillStyle = "rgba(0, 0, 0, 0.3)";
-      ctx.fillRect(0, 0, screenshotCanvas.width, screenshotCanvas.height);
-      // Clear selected area
-      ctx.clearRect(x, y, w, h);
-      ctx.drawImage(img, x, y, w, h, x, y, w, h);
-      // Draw border (constant on-screen thickness regardless of scale)
-      const rect = screenshotCanvas.getBoundingClientRect();
-      ctx.strokeStyle = "rgba(var(--accent-terracotta-rgb), 0.8)";
-      ctx.lineWidth = 2 / (img.naturalWidth / rect.width);
-      ctx.strokeRect(x, y, w, h);
-    };
-
-    screenshotCanvas.onmouseup = (e) => {
-      if (!isSelecting) return;
-      isSelecting = false;
-      const p = toImgCoords(e.clientX, e.clientY);
-      const x = Math.min(startX, p.x);
-      const y = Math.min(startY, p.y);
-      let w = Math.abs(p.x - startX);
-      let h = Math.abs(p.y - startY);
-
-      // Clamp to the captured image bounds
-      const cx = Math.max(0, Math.min(x, img.naturalWidth - 1));
-      const cy = Math.max(0, Math.min(y, img.naturalHeight - 1));
-      w = Math.min(w, img.naturalWidth - cx);
-      h = Math.min(h, img.naturalHeight - cy);
-
-      if (w < 5 || h < 5) {
-        // Too small — just close
-        screenshotOverlay.classList.add("hidden");
-        return;
-      }
-
-      // Extract selected area at NATIVE screen resolution
-      const iw = Math.max(1, Math.round(w));
-      const ih = Math.max(1, Math.round(h));
-      const tempCanvas = document.createElement("canvas");
-      tempCanvas.width = iw;
-      tempCanvas.height = ih;
-      const tempCtx = tempCanvas.getContext("2d")!;
-      tempCtx.drawImage(img, cx, cy, w, h, 0, 0, iw, ih);
-      const selectedDataUrl = tempCanvas.toDataURL("image/png");
-
-      // Copy to system clipboard as a REAL image (CF_DIB + PNG via Win32 —
-      // same approach Lightshot uses). navigator.clipboard is unreliable
-      // inside WebView2 and silently fails for images.
-      invoke("set_clipboard_image", { dataUrl: selectedDataUrl });
-
-      // Save to %TEMP%\flatshot.png via backend
-      invoke("save_clipboard_image", { dataUrl: selectedDataUrl });
-
-      // Add to clipboard widget
-      if (!clipboardItems.includes(selectedDataUrl)) {
-        clipboardItems.unshift(selectedDataUrl);
-        if (clipboardItems.length > 15) clipboardItems.pop();
-        renderClipboard();
-        invoke("save_clipboard", { items: clipboardItems });
-      }
-
-      screenshotOverlay.classList.add("hidden");
-      // Hide launcher if it was only shown for screenshot
-      invoke("close_launcher");
-    };
-
-    // Esc to cancel
-    const escHandler = (ev: KeyboardEvent) => {
-      if (ev.key === "Escape") {
-        screenshotOverlay.classList.add("hidden");
-        document.removeEventListener("keydown", escHandler);
-        // Hide launcher if it was only shown for screenshot
-        invoke("close_launcher");
-      }
-    };
-    document.addEventListener("keydown", escHandler);
-}
 
 // ===== Init =====
 async function init() {

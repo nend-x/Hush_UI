@@ -528,12 +528,10 @@ pub fn run() {
             close_table,
             save_table_pos,
             get_language,
-            take_screenshot,
             save_clipboard_image,
             set_clipboard_image,
             get_clipboard_text,
             set_clipboard_text,
-            show_launcher_for_screenshot,
             reboot_system,
             shutdown_system,
             add_to_startup,
@@ -626,8 +624,8 @@ pub(crate) fn toggle_launcher_impl(app: &tauri::AppHandle) {
 ///
 /// 0.2: hushlight is no longer a fullscreen overlay — it is a medium
 /// centered window with just the search bar (desktop icons moved to the
-/// desktop table, widgets to the widgets table). The old fullscreen
-/// "launcher" window now only hosts the screenshot region-select flow.
+/// desktop table, widgets to the widgets table). The fullscreen "launcher"
+/// window stays configured as the generic fullscreen surface.
 fn show_launcher(app: &tauri::AppHandle) {
     let Some(hushlight) = app.get_webview_window("hushlight") else {
         log::error!("show_launcher: hushlight window not found");
@@ -698,30 +696,12 @@ fn launcher_close_finished(app: tauri::AppHandle) {
     }
 }
 
-// ===== Fit launcher window to the physical screen =====
-// The config declares a 1920x1080 (logical) window; under DPI scaling that no
-// longer matches the monitor, which made the screenshot overlay "zoomed" and
-// left screen edges uncovered. Size/position it to the primary monitor in
-// physical pixels so the overlay covers the entire screen 1:1.
-fn fit_launcher_to_screen(app: &tauri::AppHandle) {
-    if let Some(launcher) = app.get_webview_window("launcher") {
-        if let Ok(Some(monitor)) = launcher.primary_monitor() {
-            let pos = monitor.position();
-            let size = monitor.size();
-            let _ = launcher.set_position(tauri::PhysicalPosition::new(pos.x, pos.y));
-            let _ = launcher.set_size(tauri::PhysicalSize::new(size.width, size.height));
-            log::info!("launcher fitted to screen: {}x{} @ ({}, {})",
-                size.width, size.height, pos.x, pos.y);
-        }
-    }
-}
-
 #[tauri::command]
 fn close_launcher(app: tauri::AppHandle) {
     // Two close paths share this command: the hushlight state machine and
-    // the screenshot flow (which shows the fullscreen "launcher" window for
-    // region-select and closes it when done). If the screenshot window is
-    // the one visible, close THAT directly without touching hushlight state.
+    // the fullscreen "launcher" window used as a plain window surface. When
+    // that window is the one visible, close it directly without touching
+    // the hushlight state.
     if let Some(launcher) = app.get_webview_window("launcher") {
         if launcher.is_visible().unwrap_or(false) && !LAUNCHER_OPEN.load(Ordering::SeqCst) {
             CLOSE_SEQ.fetch_add(1, Ordering::SeqCst);
@@ -1834,95 +1814,6 @@ fn get_language() -> String {
     }
 }
 
-// ===== Screenshot =====
-#[tauri::command]
-fn take_screenshot() -> Option<String> {
-    #[cfg(windows)]
-    {
-        
-        use windows::Win32::Graphics::Gdi::{
-            GetDC, CreateCompatibleDC, CreateCompatibleBitmap,
-            SelectObject, BitBlt, GetDIBits, DeleteDC, DeleteObject, ReleaseDC,
-            BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, BI_RGB, RGBQUAD, SRCCOPY,
-        };
-        use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN};
-        use image::ImageEncoder;
-        use base64::Engine;
-
-        unsafe {
-            let w = GetSystemMetrics(SM_CXSCREEN);
-            let h = GetSystemMetrics(SM_CYSCREEN);
-
-            let dc = GetDC(None);
-            let mem_dc = CreateCompatibleDC(Some(dc));
-            let bmp = CreateCompatibleBitmap(dc, w, h);
-            let old = SelectObject(mem_dc, bmp.into());
-
-            let _ = BitBlt(mem_dc, 0, 0, w, h, Some(dc), 0, 0, SRCCOPY);
-            let _ = SelectObject(mem_dc, old);
-
-            let bmi = BITMAPINFO {
-                bmiHeader: BITMAPINFOHEADER {
-                    biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
-                    biWidth: w,
-                    biHeight: -h,
-                    biPlanes: 1,
-                    biBitCount: 32,
-                    biCompression: BI_RGB.0,
-                    biSizeImage: 0,
-                    biXPelsPerMeter: 0,
-                    biYPelsPerMeter: 0,
-                    biClrUsed: 0,
-                    biClrImportant: 0,
-                },
-                bmiColors: [RGBQUAD::default()],
-            };
-
-            let mut pixels: Vec<u8> = vec![0u8; (w * h * 4) as usize];
-            let copied = GetDIBits(
-                mem_dc, bmp, 0, h as u32,
-                Some(pixels.as_mut_ptr() as *mut _),
-                &bmi as *const _ as *mut _, DIB_RGB_COLORS,
-            );
-
-            let _ = DeleteDC(mem_dc);
-            let _ = DeleteObject(bmp.into());
-            let _ = ReleaseDC(None, dc);
-
-            if copied == 0 {
-                return None;
-            }
-
-            // BGRA → RGBA
-            for chunk in pixels.chunks_mut(4) {
-                let b = chunk[0];
-                chunk[0] = chunk[2];
-                chunk[2] = b;
-            }
-
-            let img = image::RgbaImage::from_raw(w as u32, h as u32, pixels)?;
-            let mut buf = std::io::Cursor::new(Vec::new());
-            let png = image::codecs::png::PngEncoder::new(&mut buf);
-            png.write_image(&img, w as u32, h as u32, image::ExtendedColorType::Rgba8).ok()?;
-
-            let png_bytes = buf.into_inner();
-
-            // Save to %TEMP%\flatshot.png
-            if let Ok(temp) = std::env::var("TEMP") {
-                let path = std::path::PathBuf::from(temp).join("flatshot.png");
-                let _ = std::fs::write(&path, &png_bytes);
-            }
-
-            let b64 = base64::engine::general_purpose::STANDARD.encode(&png_bytes);
-            Some(format!("data:image/png;base64,{}", b64))
-        }
-    }
-    #[cfg(not(windows))]
-    {
-        None
-    }
-}
-
 // ===== Save clipboard image =====
 #[tauri::command]
 fn save_clipboard_image(data_url: String) {
@@ -2038,31 +1929,6 @@ fn set_clipboard_image(data_url: String) {
     #[cfg(not(windows))]
     {
         let _ = data_url;
-    }
-}
-
-// ===== Show launcher for screenshot (instant, no animations) =====
-// Uses the fullscreen "launcher" window (NOT hushlight — that one is the
-// medium search window now). The screenshot overlay needs the whole screen.
-#[tauri::command]
-fn show_launcher_for_screenshot(app: tauri::AppHandle) {
-    // If hushlight is open, close it instantly — the screenshot overlay
-    // replaces it on screen.
-    if LAUNCHER_OPEN.swap(false, Ordering::SeqCst) {
-        CLOSE_SEQ.fetch_add(1, Ordering::SeqCst);
-        if let Some(hushlight) = app.get_webview_window("hushlight") {
-            win32::window::hide_window(&hushlight);
-        }
-    }
-    if let Some(launcher) = app.get_webview_window("launcher") {
-        fit_launcher_to_screen(&app);
-        win32::window::show_window(&launcher);
-        let _ = launcher.set_focus();
-        let _ = launcher.set_always_on_top(true);
-        // 0.3.0: the launcher page now starts/stops its polling loops
-        // (clipboard, sysmon, battery) on this event instead of polling
-        // blindly forever while the window sits hidden.
-        let _ = app.emit("launcher://force-shown", ());
     }
 }
 
