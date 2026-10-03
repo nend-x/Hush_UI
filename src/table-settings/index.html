@@ -69,23 +69,6 @@
       </div>
 
       <div class="settings-section">
-        <div class="settings-section-title">Search</div>
-        <div class="settings-hint">File indexing helps to search for files faster. Hushlight uses the index instead of walking the Start Menu and Desktop on every keystroke.</div>
-        <div class="settings-row">
-          <span class="settings-label" id="index-status">Not indexed</span>
-          <button class="mt-exit" id="btn-index" style="margin:0;padding:6px 14px;" title="Build the search index now">Index</button>
-        </div>
-        <div class="settings-row">
-          <span class="settings-label">Clear search index</span>
-          <button class="mt-exit" id="btn-clear-index" style="margin:0;padding:6px 14px;" title="Delete the search index">Clear</button>
-        </div>
-        <div class="settings-row">
-          <span class="settings-label">Clear icon cache</span>
-          <button class="mt-exit" id="btn-clear-icons" style="margin:0;padding:6px 14px;" title="Drop cached file icons (they are re-extracted on demand)">Clear</button>
-        </div>
-      </div>
-
-      <div class="settings-section">
         <div class="settings-section-title">System</div>
         <div class="settings-row">
           <span class="settings-label">Clock format</span>
@@ -94,6 +77,10 @@
             <button data-value="12">12h</button>
           </div>
         </div>
+        <div class="settings-row">
+          <span class="settings-label">Pie hub clock</span>
+          <label class="toggle"><input type="checkbox" id="toggle-pie-clock" checked /><span class="toggle-slider"></span></label>
+        </div>
       </div>
 
       <div class="settings-section">
@@ -101,6 +88,10 @@
         <div class="settings-row">
           <span class="settings-label">Reset config (restarts the app clean)</span>
           <button class="mt-exit" id="mt-reset" style="margin:0;padding:6px 14px;" title="Delete all config files and restart">Reset</button>
+        </div>
+        <div class="settings-row">
+          <span class="settings-label">Clear icon cache</span>
+          <button class="mt-exit" id="btn-clear-icons" style="margin:0;padding:6px 14px;" title="Drop cached file icons (they are re-extracted on demand)">Clear</button>
         </div>
       </div>
 

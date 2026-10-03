@@ -18,7 +18,6 @@ mod desktop_watcher;
 mod elevation;
 mod hide_taskbar;
 mod persist;
-mod search_index;
 #[cfg(windows)]
 mod start_menu_killer;
 #[cfg(windows)]
@@ -528,9 +527,6 @@ pub fn run() {
             load_icon_recolor,
             save_settings,
             load_settings,
-            get_search_index_status,
-            build_search_index,
-            clear_search_cache,
             clear_icon_cache,
             get_elevation_state,
             set_tables_hover,
@@ -1719,6 +1715,9 @@ fn save_settings(settings: serde_json::Value, app: tauri::AppHandle) {
     if let Some(v) = settings.get("clock_24h").and_then(|v| v.as_bool()) {
         current.clock_24h = v;
     }
+    if let Some(v) = settings.get("pie_clock").and_then(|v| v.as_bool()) {
+        current.pie_clock = v;
+    }
     if let Some(v) = settings.get("show_desktop_grid").and_then(|v| v.as_bool()) {
         current.show_desktop_grid = v;
     }
@@ -1742,6 +1741,7 @@ fn save_settings(settings: serde_json::Value, app: tauri::AppHandle) {
         "settings://changed",
         serde_json::json!({
             "clock_24h": current.clock_24h,
+            "pie_clock": current.pie_clock,
             "show_desktop_grid": current.show_desktop_grid,
         }),
     );
@@ -1751,43 +1751,6 @@ fn save_settings(settings: serde_json::Value, app: tauri::AppHandle) {
 #[tauri::command]
 fn load_settings() -> persist::Settings {
     persist::load_settings()
-}
-
-// ===== Search index + cache management (0.3.0) =====
-
-#[derive(serde::Serialize)]
-struct IndexStatus {
-    indexed: bool,
-    building: bool,
-    count: usize,
-    built_at: Option<u64>,
-}
-
-#[tauri::command]
-fn get_search_index_status() -> IndexStatus {
-    let snap = search_index::snapshot();
-    IndexStatus {
-        indexed: snap.is_some(),
-        building: search_index::is_building(),
-        count: snap.as_ref().map(|i| i.len()).unwrap_or(0),
-        built_at: if snap.is_some() { Some(search_index::built_at()) } else { None },
-    }
-}
-
-/// Build the search index in a background thread. The settings table calls
-/// this from the "Index" button; progress rides on notify://progress and
-/// the toast hides itself one second after completion.
-#[tauri::command]
-fn build_search_index(app: tauri::AppHandle) {
-    std::thread::spawn(move || {
-        search_index::build(&app);
-    });
-}
-
-/// Clear the search index cache (on-disk + in-memory).
-#[tauri::command]
-fn clear_search_cache() -> bool {
-    search_index::clear()
 }
 
 /// Clear the icon cache (SHGetFileInfoW results cached per path).
@@ -2027,40 +1990,6 @@ fn show_notification(handle: &tauri::AppHandle, title: &str, body: &str, duratio
         progress: None,
     });
     schedule_notification_hide(handle, duration_ms);
-}
-
-/// Show (or update) the toast with a progress statusbar. Re-showing while
-/// visible only refreshes the content — the frontend replays no animation
-/// for progress updates (it listens on notify://progress for those).
-fn show_notification_progress(app: &tauri::AppHandle, title: &str, body: &str, progress: f32) {
-    show_notification_payload(app, NotificationPayload {
-        title: title.to_string(),
-        body: body.to_string(),
-        progress: Some(progress),
-    });
-}
-
-/// Update the toast's progress bar (no slide-in replay, no window toggling).
-fn update_notification_progress(app: &tauri::AppHandle, progress: f32) {
-    let _ = app.emit("notify://progress", serde_json::json!({ "progress": progress.clamp(0.0, 100.0) }));
-}
-
-/// Mark the progress toast finished and hide it one second later
-/// (requirement: the notification disappears 1 s after the statusbar
-/// completes).
-fn finish_notification_progress(app: &tauri::AppHandle, body: String) {
-    let seq = NOTIFY_SEQ.fetch_add(1, Ordering::SeqCst) + 1;
-    let _ = app.emit(
-        "notify://progress",
-        serde_json::json!({ "progress": 100.0, "body": body, "seq": seq }),
-    );
-    let h = app.clone();
-    std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_millis(1000));
-        if NOTIFY_SEQ.load(Ordering::SeqCst) == seq {
-            let _ = h.emit("notify://hide", ());
-        }
-    });
 }
 
 fn show_notification_payload(handle: &tauri::AppHandle, payload: NotificationPayload) {
@@ -2601,41 +2530,30 @@ fn search_programs(query: String) -> Vec<SearchResult> {
             }
         }
 
-        // 2. Filesystem candidates.
-        //
-        // FAST PATH (0.3.0): when a search index exists, filter the
-        // in-memory snapshot — no filesystem walking on the keystroke path.
-        // SLOW PATH: walk Start Menu + Desktop like before (used until the
-        // user builds an index from the settings table).
+        // 2. Filesystem candidates: walk Start Menu + Desktop directly. The
+        // depth-limited walk on the idle-cooldown keystroke path is cheap
+        // (and icons are only resolved for the final page of results).
         let mut matched: Vec<(String, String, bool)> = Vec::new(); // (name, path, is_folder)
-        if let Some(items) = search_index::snapshot() {
-            for item in items {
-                if item.name.to_lowercase().contains(&q) {
-                    matched.push((item.name, item.path, item.is_folder));
-                }
-            }
-        } else {
-            let start_menu_dirs: Vec<std::path::PathBuf> = vec![
-                std::env::var("PROGRAMDATA")
-                    .map(std::path::PathBuf::from)
-                    .map(|p| p.join("Microsoft\\Windows\\Start Menu\\Programs"))
-                    .unwrap_or_default(),
-                std::env::var("APPDATA")
-                    .map(std::path::PathBuf::from)
-                    .map(|p| p.join("Microsoft\\Windows\\Start Menu\\Programs"))
-                    .unwrap_or_default(),
-            ];
-            for dir in start_menu_dirs {
-                walk_programs(&dir, &q, &mut matched, true);
-            }
-            // Desktop items (directories included so a desktop FOLDER is
-            // never shadowed by a same-named .exe/.lnk).
-            if let Ok(desktop_dir) = std::env::var("USERPROFILE")
+        let start_menu_dirs: Vec<std::path::PathBuf> = vec![
+            std::env::var("PROGRAMDATA")
                 .map(std::path::PathBuf::from)
-                .map(|p| p.join("Desktop"))
-            {
-                walk_programs(&desktop_dir, &q, &mut matched, true);
-            }
+                .map(|p| p.join("Microsoft\\Windows\\Start Menu\\Programs"))
+                .unwrap_or_default(),
+            std::env::var("APPDATA")
+                .map(std::path::PathBuf::from)
+                .map(|p| p.join("Microsoft\\Windows\\Start Menu\\Programs"))
+                .unwrap_or_default(),
+        ];
+        for dir in start_menu_dirs {
+            walk_programs(&dir, &q, &mut matched, true);
+        }
+        // Desktop items (directories included so a desktop FOLDER is
+        // never shadowed by a same-named .exe/.lnk).
+        if let Ok(desktop_dir) = std::env::var("USERPROFILE")
+            .map(std::path::PathBuf::from)
+            .map(|p| p.join("Desktop"))
+        {
+            walk_programs(&desktop_dir, &q, &mut matched, true);
         }
 
         for (name, path, is_folder) in matched {
@@ -2778,7 +2696,6 @@ fn wipe_configs() {
         "themes.json",
         "tables.json",
         "tutorial_seen.json",
-        "search_index.json",
     ];
 
     for file in &files {
