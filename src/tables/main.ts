@@ -22,6 +22,7 @@ interface ShowPayload {
 
 const root = document.getElementById("tables-root")!;
 const slices = Array.from(document.querySelectorAll<SVGGElement>(".pie-slice"));
+const hubClock = document.getElementById("pie-clock") as unknown as SVGTextElement;
 
 let hoverTask: number | null = null;
 
@@ -55,6 +56,10 @@ function layoutPie(x: number, y: number) {
   hub.setAttribute("cx", `${x}`);
   hub.setAttribute("cy", `${y}`);
   hub.setAttribute("r", `${HUB_R}`);
+
+  // Hub clock rides the hub circle (dominant-baseline centers it vertically).
+  hubClock.setAttribute("x", `${x}`);
+  hubClock.setAttribute("y", `${y}`);
 
   for (const slice of slices) {
     const i = SLICE_ORDER.indexOf(slice.dataset.table!);
@@ -118,6 +123,59 @@ root.addEventListener("mousedown", () => {
   invoke("close_table", { name: "tables" });
 });
 
+// ===== Hub clock =====
+// The (formerly empty) center hub shows the local time. Format follows
+// the settings' clock format (clock_24h — same segmented control that
+// drives the taskbar clock). While the pie is shown the clock ticks
+// every second; the interval dies with the picker so the hidden window
+// never wakes its (suspended) webview for nothing.
+let clock24h = true;
+let clockTimer: number | null = null;
+
+function formatNow(): string {
+  const now = new Date();
+  const h = now.getHours();
+  const m = now.getMinutes().toString().padStart(2, "0");
+  if (clock24h) return `${h.toString().padStart(2, "0")}:${m}`;
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${m} ${h < 12 ? "AM" : "PM"}`;
+}
+
+// Perfect fit: the text must stay inside the hub circle. Measure after
+// each render and shrink when the current format is wider (the 12h
+// variant with its AM/PM suffix); never grow past the base size.
+const HUB_BASE_FONT = 14;
+const HUB_MAX_TEXT_W = HUB_R * 1.7;
+
+function renderHubClock() {
+  hubClock.textContent = formatNow();
+  hubClock.style.fontSize = `${HUB_BASE_FONT}px`;
+  const w = hubClock.getComputedTextLength();
+  if (w > HUB_MAX_TEXT_W) {
+    hubClock.style.fontSize =
+      `${Math.max(8, Math.floor((HUB_BASE_FONT * HUB_MAX_TEXT_W) / w))}px`;
+  }
+}
+
+function startHubClock() {
+  renderHubClock();
+  if (clockTimer === null) clockTimer = window.setInterval(renderHubClock, 1000);
+}
+
+function stopHubClock() {
+  if (clockTimer !== null) {
+    window.clearInterval(clockTimer);
+    clockTimer = null;
+  }
+}
+
+async function loadClockFormat() {
+  try {
+    const s = await invoke<{ clock_24h?: boolean }>("load_settings");
+    clock24h = s.clock_24h ?? true;
+  } catch {}
+}
+
 listen<ShowPayload>("tables://show", (e) => {
   const { x, y, seq } = e.payload;
   // Anchor point → CSS vars for the vignette + the pie layout.
@@ -140,6 +198,10 @@ listen<ShowPayload>("tables://show", (e) => {
   const confirmRendered = () => invoke("tables_rendered", { seq });
   requestAnimationFrame(() => requestAnimationFrame(confirmRendered));
   window.setTimeout(confirmRendered, 120);
+  // Tick from the moment the pie pops in; re-pull the format every show
+  // so a settings change while running is picked up without a restart.
+  void loadClockFormat().then(renderHubClock);
+  startHubClock();
 });
 
 listen<ThemePayload>("theme://changed", (e) => {
@@ -152,6 +214,7 @@ listen<boolean>("icon-recolor://changed", (e) => {
 listen("tables://hide", () => {
   root.classList.remove("shown");
   slices.forEach((s) => s.classList.remove("hover"));
+  stopHubClock();
 });
 
 // Apply the active theme + recolor state at startup (the picker loads

@@ -88,6 +88,19 @@
 .tables-root.shown .pie-icon-inner { opacity: 1; transform: scale(1); }
 .tables-root.shown .pie-hub   { fill-opacity: 1; stroke-opacity: 1; }
 
+/* Hub clock — lives inside the center hub, ticks every second while
+   the pie is open. Opacity follows the hub's pop-in. */
+.pie-clock {
+  fill: var(--text-muted);
+  font-family: var(--font-display);
+  font-size: 14px;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 140ms var(--ease-out-soft);
+}
+.tables-root.shown .pie-clock { opacity: 1; }
+
 /* Hovered slice: raised fill, terracotta border, brightened content. */
 .pie-slice.hover .pie-wedge {
   fill: var(--bg-espresso-raised);
