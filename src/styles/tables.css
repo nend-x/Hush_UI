@@ -771,8 +771,10 @@
   height: 26px;
 }
 
-/* Launch spin — the clicked app/folder icon spins for 1s while the item
-   launches, then the desktop table closes (handled by the frontend). */
+/* Launch spin — the clicked app/folder icon spins for 3s while the item
+   launches, then the desktop table closes (handled by the frontend). Same
+   3s ceiling as the launcher's spin; the frontend drops .launching when
+   the spin ends so the class can never survive a close/reopen cycle. */
 .td-grid .launcher-item.launching {
   pointer-events: none;
   cursor: default;
@@ -783,7 +785,7 @@
 .td-grid .launcher-item.launching .icon-box img,
 .td-grid .launcher-item.launching .icon-box span {
   display: block;
-  animation: td-icon-spin 1s linear;
+  animation: td-icon-spin 3s linear;
 }
 
 @keyframes td-icon-spin {

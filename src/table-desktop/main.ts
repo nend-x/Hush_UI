@@ -38,6 +38,12 @@ let closing = false;
 listen("table://desktop-shown", () => {
   closing = false;
   launching = false; // a previous session's launch animation must not block new clicks
+  // The window is only hidden between sessions, so the DOM persists — clear
+  // any stale .launching classes a previous session left behind, or the
+  // affected icons would keep spinning on every reopen.
+  grid.querySelectorAll(".launcher-item.launching").forEach((el) => {
+    el.classList.remove("launching");
+  });
   root.classList.remove("shown");
   void root.offsetWidth;
   root.classList.add("shown");
@@ -61,8 +67,9 @@ document.addEventListener("keydown", (e) => {
 let items: LauncherItem[] = [];
 
 // While a launch animation is playing the grid ignores further clicks and
-// the window closes right after the spin finishes.
-const LAUNCH_SPIN_MS = 1000;
+// the window closes right after the spin finishes. Same 3s ceiling the
+// launcher uses to guarantee the spin can never stick around.
+const LAUNCH_SPIN_MS = 3000;
 let launching = false;
 
 async function refresh() {
@@ -79,7 +86,7 @@ listen<LauncherItem[]>("launcher://items-updated", (e) => {
   render();
 });
 
-/// Launch an item and play the 1s spin animation on its icon, then close
+/// Launch an item and play the 3s spin animation on its icon, then close
 /// the desktop table. `el` is the tile that was clicked (null for the
 /// context-menu "Open" path when the tile reference is unavailable).
 function launchWithSpin(item: LauncherItem, el: HTMLElement | null) {
@@ -91,9 +98,13 @@ function launchWithSpin(item: LauncherItem, el: HTMLElement | null) {
     // Re-trigger the spin even if the tile was re-rendered between clicks.
     void el.offsetWidth;
   }
-  // After the 1s spin → close the desktop table (its own pop-out plays
-  // before the backend hides the window).
-  setTimeout(() => close(), LAUNCH_SPIN_MS);
+  // After the 3s spin → drop the launching class (it must never outlive
+  // the spin, the window is only hidden and its DOM persists) → close the
+  // desktop table (its own pop-out plays before the backend hides it).
+  setTimeout(() => {
+    el?.classList.remove("launching");
+    close();
+  }, LAUNCH_SPIN_MS);
 }
 
 // ===== Keyed reconciliation (0.3.0) =====
