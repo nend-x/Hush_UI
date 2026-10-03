@@ -703,7 +703,7 @@ html.background-ready, html.background-ready body {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   padding: 8px 12px 4px;
-  cursor: move; /* Visual hint that header is draggable */
+  cursor: default; /* widgets are no longer draggable — no move hint */
   user-select: none;
 }
 
