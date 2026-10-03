@@ -156,13 +156,6 @@ pub fn run() {
 
     let state = Arc::new(Mutex::new(AppState::new()));
 
-    // Load persisted blacklist (by title + exe_path — survives restarts)
-    {
-        let mut s = state.lock();
-        s.blacklisted = persist::load_blacklist();
-        log::info!("Loaded {} blacklisted window entries from disk", s.blacklisted.len());
-    }
-
     // The app is usually elevated at this point (we requested UAC above and
     // only continued when the user declined).
 
@@ -428,8 +421,8 @@ pub fn run() {
             // was one of the main contributors to the ~30% idle CPU burn.
             //
             // Refreshes are now EVENT-DRIVEN: the WinEvent foreground hook
-            // (window switched), the taskbar strip opening, and blacklist
-            // changes all trigger immediate refreshes. This loop is only a
+            // (window switched) and the taskbar strip opening trigger
+            // immediate refreshes. This loop is only a
             // slow SAFETY NET for events without a hook (window title
             // changes, apps that mutate windows subtly, missed events).
             {
@@ -493,8 +486,6 @@ pub fn run() {
             rename_desktop_item,
             refresh_desktop,
             minimize_all_windows,
-            get_blacklist,
-            set_blacklisted,
             execute_run,
             execute_run_admin,
             search_programs,
@@ -1173,11 +1164,10 @@ fn activate_window(hwnd: usize) {
 }
 
 #[tauri::command]
-fn get_all_windows(state: tauri::State<'_, Arc<Mutex<AppState>>>) -> Vec<win32::peek::WindowPreview> {
+fn get_all_windows() -> Vec<win32::peek::WindowPreview> {
     #[cfg(windows)]
     {
-        let blacklist = state.lock().blacklisted_hwnds.clone();
-        let windows_with_exe = win32::peek::get_all_windows_with_exe(&blacklist);
+        let windows_with_exe = win32::peek::get_all_windows_with_exe();
         return windows_with_exe
             .into_iter()
             .map(|w| win32::peek::WindowPreview {
@@ -1314,47 +1304,6 @@ fn minimize_all_windows(app: tauri::AppHandle) {
             let _ = EnumWindows(Some(enum_proc), lparam);
         }
     }
-}
-
-// ===== Window blacklist (by title + exe_path, persistent across launches) =====
-#[tauri::command]
-fn get_blacklist(state: tauri::State<'_, Arc<Mutex<AppState>>>) -> Vec<app_state::BlacklistEntry> {
-    state.lock().blacklisted.clone()
-}
-
-#[tauri::command]
-fn set_blacklisted(hwnd: usize, blacklisted: bool, app: tauri::AppHandle) {
-    log::info!("set_blacklisted: hwnd={} blacklisted={}", hwnd, blacklisted);
-    {
-        let state = app.state::<Arc<Mutex<AppState>>>();
-        let mut s = state.lock();
-
-        #[cfg(windows)]
-        {
-            let all_windows = win32::peek::get_all_windows_with_exe(&[]);
-            if blacklisted {
-                if let Some(w) = all_windows.iter().find(|w| w.hwnd == hwnd) {
-                    // Don't add duplicates by exe_path
-                    if !s.blacklisted.iter().any(|b| b.exe_path == w.exe_path) {
-                        s.blacklisted.push(app_state::BlacklistEntry {
-                            exe_path: w.exe_path.clone(),
-                            title: Some(w.title.clone()),
-                            hwnd,
-                        });
-                    }
-                }
-            } else {
-                // Remove by matching exe_path
-                if let Some(w) = all_windows.iter().find(|w| w.hwnd == hwnd) {
-                    s.blacklisted.retain(|b| b.exe_path != w.exe_path);
-                }
-            }
-        }
-
-        persist::save_blacklist(&s.blacklisted);
-    }
-    refresh_taskbar_apps(&app);
-    let _ = app.emit("taskbar://blacklist-updated", ());
 }
 
 // ===== Clipboard history =====
@@ -2720,7 +2669,6 @@ fn wipe_configs() {
     let data_dir = persist::data_dir();
 
     let files = [
-        "blacklist.json",
         "clipboard.json",
         "notes.txt",
         "widgets.json",
@@ -2794,59 +2742,7 @@ mod moved_save {
 
 #[cfg(windows)]
 fn refresh_taskbar_apps(handle: &tauri::AppHandle) {
-    // Reconcile persistent blacklist entries with currently open windows.
-    // Match by exe_path (permanent). Remove entries whose exe_path is empty
-    // or matches no current window AND has no valid exe_path (phantom cleanup).
-    //
-    // IMPORTANT: do the Win32 enumeration (get_all_windows_with_exe) BEFORE
-    // taking the AppState lock. That call can take hundreds of ms when the
-    // shell is busy or in a bad post-Modern-Standby state — it does
-    // EnumWindows + OpenProcess + QueryFullProcessImageNameW + SHGetFileInfoW
-    // per visible window, all of which can stall if explorer.exe is hung.
-    // Holding the AppState lock during that work blocks every Tauri command
-    // handler that touches AppState (which is most of them), which in turn
-    // backs up the IPC layer and can trip Windows' 5s "Not Responding"
-    // threshold for the Hush_UI windows. Snapshots in, lock only to write.
-    let all_windows = win32::peek::get_all_windows_with_exe(&[]);
-    let blacklisted_snapshot: Vec<app_state::BlacklistEntry> = {
-        let state = handle.state::<Arc<Mutex<AppState>>>();
-        let s = state.lock();
-        s.blacklisted.clone()
-    };
-
-    let mut new_hwnds: Vec<usize> = Vec::new();
-    let mut valid_entries: Vec<app_state::BlacklistEntry> = Vec::new();
-    for mut entry in blacklisted_snapshot.into_iter() {
-        // Skip entries with empty exe_path (phantom data from old format)
-        if entry.exe_path.is_empty() {
-            continue;
-        }
-
-        // Try to find a current window matching this exe_path
-        if let Some(w) = all_windows.iter().find(|w| w.exe_path == entry.exe_path) {
-            entry.hwnd = w.hwnd;
-            // Update title if we have one
-            if entry.title.is_none() || entry.title.as_deref() != Some(&w.title) {
-                entry.title = Some(w.title.clone());
-            }
-            new_hwnds.push(w.hwnd);
-        } else {
-            // Window not currently open — keep entry (will match when app reopens)
-            entry.hwnd = 0;
-        }
-        valid_entries.push(entry);
-    }
-
-    // Briefly take the lock to write back the reconciled state.
-    let blacklist_hwnds = {
-        let state = handle.state::<Arc<Mutex<AppState>>>();
-        let mut s = state.lock();
-        s.blacklisted = valid_entries;
-        s.blacklisted_hwnds = new_hwnds.clone();
-        new_hwnds
-    };
-
-    match win32::apps::scan_taskbar(&blacklist_hwnds) {
+    match win32::apps::scan_taskbar() {
         Ok(apps) => {
             let state = handle.state::<Arc<Mutex<AppState>>>();
             let mut s = state.lock();

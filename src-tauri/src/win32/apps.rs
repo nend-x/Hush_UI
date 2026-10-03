@@ -26,7 +26,7 @@ use windows::Win32::UI::Shell::{IShellLinkW, ShellLink};
 use windows::Win32::System::Com::IPersistFile;
 use windows::Win32::Storage::FileSystem::WIN32_FIND_DATAW;
 
-pub fn scan_taskbar(blacklist: &[usize]) -> core::Result<Vec<TaskbarApp>> {
+pub fn scan_taskbar() -> core::Result<Vec<TaskbarApp>> {
     let mut apps: Vec<TaskbarApp> = Vec::new();
 
     // Get the current foreground window's PID to mark the active app
@@ -73,7 +73,7 @@ pub fn scan_taskbar(blacklist: &[usize]) -> core::Result<Vec<TaskbarApp>> {
     }
 
     // 2. Running windowed apps
-    let running = scan_running_windows(blacklist)?;
+    let running = scan_running_windows()?;
     for r in running {
         if !apps.iter().any(|a| a.name.eq_ignore_ascii_case(&r.name)) {
             apps.push(r);
@@ -134,7 +134,7 @@ struct RunningWindow {
     hwnd: isize,
 }
 
-fn scan_running_windows(blacklist: &[usize]) -> core::Result<Vec<TaskbarApp>> {
+fn scan_running_windows() -> core::Result<Vec<TaskbarApp>> {
     // PERF (0.3.0): the old code called get_process_exe(pid) per visible
     // window — and every call created a FULL process snapshot. With W
     // visible windows that was W snapshots per scan, and scans used to run
@@ -144,7 +144,6 @@ fn scan_running_windows(blacklist: &[usize]) -> core::Result<Vec<TaskbarApp>> {
 
     let state = ScanState {
         windows: Vec::new(),
-        blacklist: blacklist.to_vec(),
         pid_exe,
     };
     let state_ptr: *mut ScanState = Box::into_raw(Box::new(state));
@@ -173,7 +172,6 @@ fn scan_running_windows(blacklist: &[usize]) -> core::Result<Vec<TaskbarApp>> {
 
 struct ScanState {
     windows: Vec<RunningWindow>,
-    blacklist: Vec<usize>,
     /// pid → exe file name (from ONE process snapshot for the whole scan).
     pid_exe: std::collections::HashMap<u32, String>,
 }
@@ -215,12 +213,6 @@ unsafe extern "system" fn enum_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
     let state = &mut *(lparam.0 as *mut ScanState);
 
     if !IsWindowVisible(hwnd).as_bool() {
-        return BOOL(1);
-    }
-
-    // Skip blacklisted HWNDs
-    let hwnd_usize = hwnd.0 as usize;
-    if state.blacklist.contains(&hwnd_usize) {
         return BOOL(1);
     }
 

@@ -45,10 +45,7 @@ const searchWrap = document.querySelector<HTMLElement>(".launcher-search-wrap")!
 const appsBody = document.getElementById("apps-body")!;
 const minimizeAllBtn = document.getElementById("minimize-all-btn")!;
 const runBtn = document.getElementById("run-btn")!;
-const blacklistBtn = document.getElementById("blacklist-btn")!;
 const exitBtn = document.getElementById("exit-btn")!;
-const blacklistOverlay = document.getElementById("blacklist-overlay")!;
-const blacklistGrid = document.getElementById("blacklist-grid")!;
 const runDialog = document.getElementById("run-dialog")!;
 const runInput = document.getElementById("run-input") as HTMLInputElement;
 const runOkBtn = document.getElementById("run-ok")!;
@@ -698,8 +695,6 @@ function resetLauncherDom(): void {
   expandOverlay.classList.remove("expanding", "expanded", "collapsing", "fading");
   searchInput.value = "";
   runDialog.classList.add("hidden");
-  blacklistOverlay.classList.add("hidden");
-  blacklistBtn.classList.remove("active");
   document.querySelectorAll(".context-menu").forEach((el) => el.remove());
   document.querySelectorAll(".modal-backdrop").forEach((el) => el.remove());
   applyFilter();
@@ -1067,16 +1062,6 @@ document.addEventListener("keydown", (e) => {
     return;
   }
 
-  // If blacklist overlay is open
-  if (!blacklistOverlay.classList.contains("hidden")) {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      blacklistOverlay.classList.add("hidden");
-      blacklistBtn.classList.remove("active");
-    }
-    return;
-  }
-
   if (e.key === "Escape") {
     e.preventDefault();
     closeLauncher();
@@ -1222,16 +1207,6 @@ exitBtn.addEventListener("click", () => {
 
 runBtn.addEventListener("click", () => showRunDialog());
 
-blacklistBtn.addEventListener("click", async () => {
-  if (!blacklistOverlay.classList.contains("hidden")) {
-    blacklistOverlay.classList.add("hidden");
-    blacklistBtn.classList.remove("active");
-    return;
-  }
-  blacklistOverlay.classList.remove("hidden");
-  blacklistBtn.classList.add("active");
-  await showBlacklist();
-});
 
 // ===== Run dialog =====
 function showRunDialog() {
@@ -1266,110 +1241,6 @@ runAdminBtn.addEventListener("click", () => {
   }
 });
 
-// ===== Blacklist =====
-async function showBlacklist() {
-  blacklistGrid.innerHTML = "";
-
-  let windows: WindowEntry[] = [];
-  try {
-    windows = await invoke<WindowEntry[]>("get_all_windows");
-  } catch (err) {
-    console.error("get_all_windows failed:", err);
-  }
-
-  let blacklistedEntries: { exe_path: string; title: string | null; hwnd: number }[] = [];
-  try {
-    blacklistedEntries = await invoke("get_blacklist");
-  } catch {}
-
-  const allWindows: { hwnd: number; title: string; icon: string | null; blacklisted: boolean }[] = [];
-
-  for (const w of windows) {
-    allWindows.push({
-      hwnd: w.hwnd,
-      title: w.title,
-      icon: w.icon_data_url,
-      blacklisted: false,
-    });
-  }
-
-  // For blacklisted entries not currently open, show them with their exe_path
-  for (const entry of blacklistedEntries) {
-    if (!allWindows.find((w) => w.hwnd === entry.hwnd && entry.hwnd !== 0)) {
-      allWindows.push({
-        hwnd: entry.hwnd,
-        title: entry.title || entry.exe_path.split(/[\\/]/).pop() || "Unknown",
-        icon: null,
-        blacklisted: true,
-      });
-    }
-  }
-
-  // Sort: blacklisted first
-  allWindows.sort((a, b) => {
-    if (a.blacklisted && !b.blacklisted) return -1;
-    if (!a.blacklisted && b.blacklisted) return 1;
-    return a.title.localeCompare(b.title);
-  });
-
-  for (const w of allWindows) {
-    const row = document.createElement("div");
-    row.className = "blacklist-row";
-    if (w.blacklisted) row.classList.add("pinned");
-
-    const checkbox = document.createElement("div");
-    checkbox.className = "blacklist-checkbox";
-    row.appendChild(checkbox);
-
-    if (w.icon) {
-      const iconWrap = document.createElement("div");
-      iconWrap.className = "blacklist-icon";
-      const img = document.createElement("img");
-      img.src = w.icon;
-      img.alt = w.title;
-      iconWrap.appendChild(img);
-      row.appendChild(iconWrap);
-    } else {
-      const placeholder = document.createElement("div");
-      placeholder.className = "blacklist-icon";
-      placeholder.style.cssText = "display:flex;align-items:center;justify-content:center;color:var(--sand-dim);font-size:11px;font-family:var(--font-display);";
-      placeholder.textContent = (w.title || "?")[0].toUpperCase();
-      row.appendChild(placeholder);
-    }
-
-    const label = document.createElement("div");
-    label.className = "blacklist-label";
-    label.textContent = w.title;
-    row.appendChild(label);
-
-    row.addEventListener("click", () => {
-      const newBlacklisted = !w.blacklisted;
-      w.blacklisted = newBlacklisted;
-      if (newBlacklisted) {
-        row.classList.add("pinned");
-      } else {
-        row.classList.remove("pinned");
-      }
-      invoke("set_blacklisted", { hwnd: w.hwnd, blacklisted: newBlacklisted });
-    });
-
-    blacklistGrid.appendChild(row);
-  }
-
-  if (allWindows.length === 0) {
-    const empty = document.createElement("div");
-    empty.style.cssText = "text-align:center;padding:32px;color:var(--sand-dim);font-size:12px;";
-    empty.textContent = "No open windows";
-    blacklistGrid.appendChild(empty);
-  }
-}
-
-blacklistOverlay.addEventListener("click", (e) => {
-  if (e.target === blacklistOverlay) {
-    blacklistOverlay.classList.add("hidden");
-    blacklistBtn.classList.remove("active");
-  }
-});
 
 // ===== Context menus =====
 function showBackgroundContextMenu(x: number, y: number) {

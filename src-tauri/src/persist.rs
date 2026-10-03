@@ -1,7 +1,7 @@
 // Persistence — load/save config files
 //
 // Config path (Hush_UI): %LOCALAPPDATA%\Hush_UI\
-//   blacklist.json, clipboard.json, notes.txt, widgets.json,
+//   clipboard.json, notes.txt, widgets.json,
 //   widget_visibility.json, icon_recolor.json, settings.json,
 //   themes.json, tables.json
 //
@@ -10,7 +10,6 @@
 
 use std::path::PathBuf;
 use std::fs;
-use crate::app_state::BlacklistEntry;
 
 /// Root config directory. Pub because lib.rs's reset_config (-rs flag) walks
 /// the same directory.
@@ -27,25 +26,6 @@ pub fn data_dir() -> PathBuf {
         return dir;
     }
     PathBuf::from(".")
-}
-
-fn blacklist_path() -> PathBuf {
-    data_dir().join("blacklist.json")
-}
-
-pub fn load_blacklist() -> Vec<BlacklistEntry> {
-    let path = blacklist_path();
-    match fs::read_to_string(&path) {
-        Ok(s) => serde_json::from_str(&s).unwrap_or_default(),
-        Err(_) => Vec::new(),
-    }
-}
-
-pub fn save_blacklist(entries: &[BlacklistEntry]) {
-    let path = blacklist_path();
-    if let Ok(s) = serde_json::to_string_pretty(entries) {
-        let _ = fs::write(&path, s);
-    }
 }
 
 // ===== Clipboard history =====

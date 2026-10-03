@@ -27,23 +27,7 @@ pub struct DesktopItem {
 pub struct AppState {
     pub taskbar_apps: Vec<TaskbarApp>,
     pub desktop_items: Vec<DesktopItem>,
-    /// Window blacklist — identified by PERMANENT traits (title + exe_path),
-    pub blacklisted: Vec<BlacklistEntry>,
-    pub blacklisted_hwnds: Vec<usize>,
     pub app_order: Vec<String>,
-}
-
-/// A persistent blacklist entry — matches by exe_path (permanent).
-/// Title is optional (for display). HWND is the live window handle (transient).
-#[derive(Clone, serde::Serialize, serde::Deserialize)]
-pub struct BlacklistEntry {
-    /// Process exe path — the permanent identifier
-    pub exe_path: String,
-    /// Window title (optional, for display only)
-    pub title: Option<String>,
-    /// Live HWND (set on each scan; not persisted)
-    #[serde(skip)]
-    pub hwnd: usize,
 }
 
 impl AppState {
@@ -51,8 +35,6 @@ impl AppState {
         Self {
             taskbar_apps: Vec::new(),
             desktop_items: Vec::new(),
-            blacklisted: Vec::new(),
-            blacklisted_hwnds: Vec::new(),
             app_order: Vec::new(),
         }
     }
