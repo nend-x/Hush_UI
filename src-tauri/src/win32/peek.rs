@@ -95,8 +95,8 @@ unsafe extern "system" fn enum_all_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
     BOOL(1)
 }
 
-/// Get ALL visible windows with their exe paths (for blacklist matching).
-pub fn get_all_windows_with_exe(blacklist: &[usize]) -> Vec<WindowWithExe> {
+/// Get ALL visible windows with their exe paths.
+pub fn get_all_windows_with_exe() -> Vec<WindowWithExe> {
     let mut results: Vec<(HWND, String, u32)> = Vec::new();
     let state_ptr: *mut Vec<(HWND, String, u32)> = &mut results;
     let lparam = LPARAM(state_ptr as isize);
@@ -108,9 +108,6 @@ pub fn get_all_windows_with_exe(blacklist: &[usize]) -> Vec<WindowWithExe> {
     let mut previews = Vec::new();
     for (hwnd, title, pid) in &results {
         let hwnd_usize = hwnd.0 as usize;
-        if blacklist.contains(&hwnd_usize) {
-            continue;
-        }
         let exe_path = resolve_process_full_path(*pid).unwrap_or_default();
         let icon = if exe_path.is_empty() {
             None

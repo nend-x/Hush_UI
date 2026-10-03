@@ -159,7 +159,7 @@ html.background-ready, html.background-ready body {
 /* ===== Action buttons (left side) =====
    The old `winselect-btn` (top of this column) has been replaced by the
    Apps widget (see below). The 3 remaining buttons (minimize-all, run,
-   blacklist) stay at the original top:24 position. The Apps widget sits
+   stay at the original top:24 position. The Apps widget sits
    BELOW them. */
 .launcher-actions {
   position: absolute;
@@ -382,6 +382,18 @@ html.background-ready, html.background-ready body {
 
 /* Animated top-edge sweep — a thin gradient line that slides across
    the top of the icon on hover. Uses a ::before pseudo-element. */
+.launcher-item.pinned .icon-box::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-terracotta);
+  z-index: 2;
+}
+
 .launcher-item .icon-box::before {
   content: "";
   position: absolute;
@@ -703,7 +715,7 @@ html.background-ready, html.background-ready body {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   padding: 8px 12px 4px;
-  cursor: move; /* Visual hint that header is draggable */
+  cursor: default; /* widgets are no longer draggable — no move hint */
   user-select: none;
 }
 
@@ -861,7 +873,7 @@ html.background-ready, html.background-ready body {
    focus that window; click the widget chrome (header / empty space) to
    open the full window-switcher overlay. Inherits the .widget base rules
    (draggable header, frosted panel, shadow).
-   Positioned BELOW the 4 action buttons (exit, minimize-all, run, blacklist)
+   Positioned BELOW the 3 action buttons (exit, minimize-all, run)
    which sit at top:24. 4 buttons × 40px + 3 × 8px gap = 184px, so the
    widget starts at top:24+184+8 = 216.
    The widget auto-sizes to fit the number of running apps — width is
@@ -1176,117 +1188,6 @@ html.background-ready, html.background-ready body {
 
 .run-btn.primary:hover { background: var(--accent-caramel); }
 
-/* ===== Blacklist overlay ===== */
-.blacklist-content {
-  width: min(640px, 80vw);
-  max-height: 80vh;
-  background: var(--bg-espresso-glass);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-xl);
-  padding: 24px;
-  overflow-y: auto;
-}
-
-.blacklist-title {
-  font-family: var(--font-display);
-  font-size: 14px;
-  color: var(--text-primary);
-  margin-bottom: 16px;
-  letter-spacing: 0.04em;
-}
-
-.blacklist-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 4px;
-}
-
-.blacklist-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-  background: rgba(var(--bg-espresso-raised-rgb), 0.60);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  transition: background-color 140ms var(--ease-out-soft),
-              border-color 140ms var(--ease-out-soft);
-}
-
-.blacklist-row:hover {
-  background: rgba(var(--bg-espresso-raised-rgb), 0.85);
-  border-color: var(--border-strong);
-}
-
-.blacklist-row.pinned {
-  border-color: var(--accent-terracotta);
-  background: var(--accent-soft);
-  order: -1; /* pinned rows go to top */
-}
-
-.blacklist-checkbox {
-  width: 16px;
-  height: 16px;
-  border: 1px solid var(--border-strong);
-  border-radius: 3px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  transition: background-color 140ms var(--ease-out-soft),
-              border-color 140ms var(--ease-out-soft);
-}
-
-.blacklist-row.pinned .blacklist-checkbox {
-  background: var(--accent-terracotta);
-  border-color: var(--accent-terracotta);
-}
-
-.blacklist-row.pinned .blacklist-checkbox::after {
-  content: '';
-  width: 4px;
-  height: 8px;
-  border: solid var(--bg-espresso-deep);
-  border-width: 0 2px 2px 0;
-  transform: rotate(45deg) translateY(-1px);
-}
-
-.blacklist-icon {
-  width: 20px;
-  height: 20px;
-  flex-shrink: 0;
-}
-
-.blacklist-icon img {
-  width: 100%;
-  height: 100%;
-  filter: brightness(0.94) saturate(0.78) sepia(0.15) hue-rotate(-6deg);
-}
-
-.blacklist-label {
-  font-family: var(--font-ui);
-  font-size: 11px;
-  color: var(--text-secondary);
-  letter-spacing: 0.01em;
-  flex: 1;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.blacklist-row.pinned .blacklist-label {
-  color: var(--text-primary);
-}
-
-.blacklist-hint {
-  font-family: var(--font-ui);
-  font-size: 10px;
-  color: var(--text-muted);
-  margin-top: 14px;
-  letter-spacing: 0.03em;
-}
-
 /* ===== Settings overlay ===== */
 .settings-overlay {
   position: fixed;
@@ -1562,41 +1463,6 @@ html.background-ready, html.background-ready body {
 }
 
 .settings-save:hover { background: var(--accent-caramel); }
-
-/* ===== Screenshot overlay ===== */
-.screenshot-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 6000;
-  cursor: crosshair;
-  animation: fade-in 100ms;
-}
-
-.screenshot-overlay.hidden { display: none; }
-
-.screenshot-canvas {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-}
-
-.screenshot-hint {
-  position: fixed;
-  top: 24px;
-  left: 50%;
-  transform: translateX(-50%);
-  font-family: var(--font-display);
-  font-size: 12px;
-  color: var(--text-primary);
-  background: rgba(var(--bg-espresso-deep-rgb), 0.80);
-  padding: 6px 16px;
-  border-radius: var(--radius-md);
-  z-index: 6001;
-  pointer-events: none;
-  animation: fade-in 200ms;
-}
 
 /* ===== Language indicator on taskbar ===== */
 .lang-indicator {

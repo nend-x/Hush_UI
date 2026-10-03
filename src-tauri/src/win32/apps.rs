@@ -26,7 +26,7 @@ use windows::Win32::UI::Shell::{IShellLinkW, ShellLink};
 use windows::Win32::System::Com::IPersistFile;
 use windows::Win32::Storage::FileSystem::WIN32_FIND_DATAW;
 
-pub fn scan_taskbar(blacklist: &[usize]) -> core::Result<Vec<TaskbarApp>> {
+pub fn scan_taskbar() -> core::Result<Vec<TaskbarApp>> {
     let mut apps: Vec<TaskbarApp> = Vec::new();
 
     // Get the current foreground window's PID to mark the active app
@@ -73,7 +73,7 @@ pub fn scan_taskbar(blacklist: &[usize]) -> core::Result<Vec<TaskbarApp>> {
     }
 
     // 2. Running windowed apps
-    let running = scan_running_windows(blacklist)?;
+    let running = scan_running_windows()?;
     for r in running {
         if !apps.iter().any(|a| a.name.eq_ignore_ascii_case(&r.name)) {
             apps.push(r);
@@ -134,7 +134,7 @@ struct RunningWindow {
     hwnd: isize,
 }
 
-fn scan_running_windows(blacklist: &[usize]) -> core::Result<Vec<TaskbarApp>> {
+fn scan_running_windows() -> core::Result<Vec<TaskbarApp>> {
     // PERF (0.3.0): the old code called get_process_exe(pid) per visible
     // window — and every call created a FULL process snapshot. With W
     // visible windows that was W snapshots per scan, and scans used to run
@@ -144,7 +144,6 @@ fn scan_running_windows(blacklist: &[usize]) -> core::Result<Vec<TaskbarApp>> {
 
     let state = ScanState {
         windows: Vec::new(),
-        blacklist: blacklist.to_vec(),
         pid_exe,
     };
     let state_ptr: *mut ScanState = Box::into_raw(Box::new(state));
@@ -173,7 +172,6 @@ fn scan_running_windows(blacklist: &[usize]) -> core::Result<Vec<TaskbarApp>> {
 
 struct ScanState {
     windows: Vec<RunningWindow>,
-    blacklist: Vec<usize>,
     /// pid → exe file name (from ONE process snapshot for the whole scan).
     pid_exe: std::collections::HashMap<u32, String>,
 }
@@ -218,12 +216,6 @@ unsafe extern "system" fn enum_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
         return BOOL(1);
     }
 
-    // Skip blacklisted HWNDs
-    let hwnd_usize = hwnd.0 as usize;
-    if state.blacklist.contains(&hwnd_usize) {
-        return BOOL(1);
-    }
-
     let ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
     let has_tool = (ex_style & (WS_EX_TOOLWINDOW.0 as isize)) != 0;
     let has_app = (ex_style & (WS_EX_APPWINDOW.0 as isize)) != 0;
@@ -243,6 +235,20 @@ unsafe extern "system" fn enum_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
 
     let mut pid: u32 = 0;
     GetWindowThreadProcessId(hwnd, Some(&mut pid));
+
+    // Ignore the Windows Input Experience host (the touch-keyboard/IME
+    // shell surface). Its CoreWindow is visible, tool-style and carries a
+    // LOCALIZED title ("Windows Input Experience" and friends), so it used
+    // to show up in the taskbar strip as a ghost entry. Match the process
+    // name, never the title — the title follows the system language.
+    if state
+        .pid_exe
+        .get(&pid)
+        .map(|exe| exe.eq_ignore_ascii_case("WindowsInputExperience.exe"))
+        .unwrap_or(false)
+    {
+        return BOOL(1);
+    }
 
     // Resolve the exe path from the prebuilt map. Full-path resolution
     // (OpenProcess + QueryFullProcessImageNameW) is still per unique pid —

@@ -156,13 +156,6 @@ pub fn run() {
 
     let state = Arc::new(Mutex::new(AppState::new()));
 
-    // Load persisted blacklist (by title + exe_path — survives restarts)
-    {
-        let mut s = state.lock();
-        s.blacklisted = persist::load_blacklist();
-        log::info!("Loaded {} blacklisted window entries from disk", s.blacklisted.len());
-    }
-
     // The app is usually elevated at this point (we requested UAC above and
     // only continued when the user declined).
 
@@ -428,8 +421,8 @@ pub fn run() {
             // was one of the main contributors to the ~30% idle CPU burn.
             //
             // Refreshes are now EVENT-DRIVEN: the WinEvent foreground hook
-            // (window switched), the taskbar strip opening, and blacklist
-            // changes all trigger immediate refreshes. This loop is only a
+            // (window switched) and the taskbar strip opening trigger
+            // immediate refreshes. This loop is only a
             // slow SAFETY NET for events without a hook (window title
             // changes, apps that mutate windows subtly, missed events).
             {
@@ -492,9 +485,8 @@ pub fn run() {
             delete_desktop_item,
             rename_desktop_item,
             refresh_desktop,
+            set_desktop_item_pinned,
             minimize_all_windows,
-            get_blacklist,
-            set_blacklisted,
             execute_run,
             execute_run_admin,
             search_programs,
@@ -528,12 +520,10 @@ pub fn run() {
             close_table,
             save_table_pos,
             get_language,
-            take_screenshot,
             save_clipboard_image,
             set_clipboard_image,
             get_clipboard_text,
             set_clipboard_text,
-            show_launcher_for_screenshot,
             reboot_system,
             shutdown_system,
             add_to_startup,
@@ -626,8 +616,8 @@ pub(crate) fn toggle_launcher_impl(app: &tauri::AppHandle) {
 ///
 /// 0.2: hushlight is no longer a fullscreen overlay — it is a medium
 /// centered window with just the search bar (desktop icons moved to the
-/// desktop table, widgets to the widgets table). The old fullscreen
-/// "launcher" window now only hosts the screenshot region-select flow.
+/// desktop table, widgets to the widgets table). The fullscreen "launcher"
+/// window stays configured as the generic fullscreen surface.
 fn show_launcher(app: &tauri::AppHandle) {
     let Some(hushlight) = app.get_webview_window("hushlight") else {
         log::error!("show_launcher: hushlight window not found");
@@ -698,30 +688,12 @@ fn launcher_close_finished(app: tauri::AppHandle) {
     }
 }
 
-// ===== Fit launcher window to the physical screen =====
-// The config declares a 1920x1080 (logical) window; under DPI scaling that no
-// longer matches the monitor, which made the screenshot overlay "zoomed" and
-// left screen edges uncovered. Size/position it to the primary monitor in
-// physical pixels so the overlay covers the entire screen 1:1.
-fn fit_launcher_to_screen(app: &tauri::AppHandle) {
-    if let Some(launcher) = app.get_webview_window("launcher") {
-        if let Ok(Some(monitor)) = launcher.primary_monitor() {
-            let pos = monitor.position();
-            let size = monitor.size();
-            let _ = launcher.set_position(tauri::PhysicalPosition::new(pos.x, pos.y));
-            let _ = launcher.set_size(tauri::PhysicalSize::new(size.width, size.height));
-            log::info!("launcher fitted to screen: {}x{} @ ({}, {})",
-                size.width, size.height, pos.x, pos.y);
-        }
-    }
-}
-
 #[tauri::command]
 fn close_launcher(app: tauri::AppHandle) {
     // Two close paths share this command: the hushlight state machine and
-    // the screenshot flow (which shows the fullscreen "launcher" window for
-    // region-select and closes it when done). If the screenshot window is
-    // the one visible, close THAT directly without touching hushlight state.
+    // the fullscreen "launcher" window used as a plain window surface. When
+    // that window is the one visible, close it directly without touching
+    // the hushlight state.
     if let Some(launcher) = app.get_webview_window("launcher") {
         if launcher.is_visible().unwrap_or(false) && !LAUNCHER_OPEN.load(Ordering::SeqCst) {
             CLOSE_SEQ.fetch_add(1, Ordering::SeqCst);
@@ -1193,11 +1165,10 @@ fn activate_window(hwnd: usize) {
 }
 
 #[tauri::command]
-fn get_all_windows(state: tauri::State<'_, Arc<Mutex<AppState>>>) -> Vec<win32::peek::WindowPreview> {
+fn get_all_windows() -> Vec<win32::peek::WindowPreview> {
     #[cfg(windows)]
     {
-        let blacklist = state.lock().blacklisted_hwnds.clone();
-        let windows_with_exe = win32::peek::get_all_windows_with_exe(&blacklist);
+        let windows_with_exe = win32::peek::get_all_windows_with_exe();
         return windows_with_exe
             .into_iter()
             .map(|w| win32::peek::WindowPreview {
@@ -1251,6 +1222,24 @@ fn rename_desktop_item(item_id: String, new_name: String, app: tauri::AppHandle)
 
 #[tauri::command]
 fn refresh_desktop(app: tauri::AppHandle) {
+    refresh_desktop_items(&app);
+}
+
+// ===== Desktop pin/unpin ("Pin to top" in the desktop-table menu) =====
+#[tauri::command]
+fn set_desktop_item_pinned(item_id: String, pinned: bool, app: tauri::AppHandle) {
+    log::info!("set_desktop_item_pinned: {item_id} pinned={pinned}");
+    let mut pins = persist::load_desktop_pins();
+    if pinned {
+        if !pins.contains(&item_id) {
+            pins.push(item_id);
+        }
+    } else {
+        pins.retain(|p| p != &item_id);
+    }
+    persist::save_desktop_pins(&pins);
+    // Rescan reapplies the pin flags + ordering and emits
+    // launcher://items-updated only when the snapshot actually changed.
     refresh_desktop_items(&app);
 }
 
@@ -1334,47 +1323,6 @@ fn minimize_all_windows(app: tauri::AppHandle) {
             let _ = EnumWindows(Some(enum_proc), lparam);
         }
     }
-}
-
-// ===== Window blacklist (by title + exe_path, persistent across launches) =====
-#[tauri::command]
-fn get_blacklist(state: tauri::State<'_, Arc<Mutex<AppState>>>) -> Vec<app_state::BlacklistEntry> {
-    state.lock().blacklisted.clone()
-}
-
-#[tauri::command]
-fn set_blacklisted(hwnd: usize, blacklisted: bool, app: tauri::AppHandle) {
-    log::info!("set_blacklisted: hwnd={} blacklisted={}", hwnd, blacklisted);
-    {
-        let state = app.state::<Arc<Mutex<AppState>>>();
-        let mut s = state.lock();
-
-        #[cfg(windows)]
-        {
-            let all_windows = win32::peek::get_all_windows_with_exe(&[]);
-            if blacklisted {
-                if let Some(w) = all_windows.iter().find(|w| w.hwnd == hwnd) {
-                    // Don't add duplicates by exe_path
-                    if !s.blacklisted.iter().any(|b| b.exe_path == w.exe_path) {
-                        s.blacklisted.push(app_state::BlacklistEntry {
-                            exe_path: w.exe_path.clone(),
-                            title: Some(w.title.clone()),
-                            hwnd,
-                        });
-                    }
-                }
-            } else {
-                // Remove by matching exe_path
-                if let Some(w) = all_windows.iter().find(|w| w.hwnd == hwnd) {
-                    s.blacklisted.retain(|b| b.exe_path != w.exe_path);
-                }
-            }
-        }
-
-        persist::save_blacklist(&s.blacklisted);
-    }
-    refresh_taskbar_apps(&app);
-    let _ = app.emit("taskbar://blacklist-updated", ());
 }
 
 // ===== Clipboard history =====
@@ -1834,95 +1782,6 @@ fn get_language() -> String {
     }
 }
 
-// ===== Screenshot =====
-#[tauri::command]
-fn take_screenshot() -> Option<String> {
-    #[cfg(windows)]
-    {
-        
-        use windows::Win32::Graphics::Gdi::{
-            GetDC, CreateCompatibleDC, CreateCompatibleBitmap,
-            SelectObject, BitBlt, GetDIBits, DeleteDC, DeleteObject, ReleaseDC,
-            BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, BI_RGB, RGBQUAD, SRCCOPY,
-        };
-        use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN};
-        use image::ImageEncoder;
-        use base64::Engine;
-
-        unsafe {
-            let w = GetSystemMetrics(SM_CXSCREEN);
-            let h = GetSystemMetrics(SM_CYSCREEN);
-
-            let dc = GetDC(None);
-            let mem_dc = CreateCompatibleDC(Some(dc));
-            let bmp = CreateCompatibleBitmap(dc, w, h);
-            let old = SelectObject(mem_dc, bmp.into());
-
-            let _ = BitBlt(mem_dc, 0, 0, w, h, Some(dc), 0, 0, SRCCOPY);
-            let _ = SelectObject(mem_dc, old);
-
-            let bmi = BITMAPINFO {
-                bmiHeader: BITMAPINFOHEADER {
-                    biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
-                    biWidth: w,
-                    biHeight: -h,
-                    biPlanes: 1,
-                    biBitCount: 32,
-                    biCompression: BI_RGB.0,
-                    biSizeImage: 0,
-                    biXPelsPerMeter: 0,
-                    biYPelsPerMeter: 0,
-                    biClrUsed: 0,
-                    biClrImportant: 0,
-                },
-                bmiColors: [RGBQUAD::default()],
-            };
-
-            let mut pixels: Vec<u8> = vec![0u8; (w * h * 4) as usize];
-            let copied = GetDIBits(
-                mem_dc, bmp, 0, h as u32,
-                Some(pixels.as_mut_ptr() as *mut _),
-                &bmi as *const _ as *mut _, DIB_RGB_COLORS,
-            );
-
-            let _ = DeleteDC(mem_dc);
-            let _ = DeleteObject(bmp.into());
-            let _ = ReleaseDC(None, dc);
-
-            if copied == 0 {
-                return None;
-            }
-
-            // BGRA → RGBA
-            for chunk in pixels.chunks_mut(4) {
-                let b = chunk[0];
-                chunk[0] = chunk[2];
-                chunk[2] = b;
-            }
-
-            let img = image::RgbaImage::from_raw(w as u32, h as u32, pixels)?;
-            let mut buf = std::io::Cursor::new(Vec::new());
-            let png = image::codecs::png::PngEncoder::new(&mut buf);
-            png.write_image(&img, w as u32, h as u32, image::ExtendedColorType::Rgba8).ok()?;
-
-            let png_bytes = buf.into_inner();
-
-            // Save to %TEMP%\flatshot.png
-            if let Ok(temp) = std::env::var("TEMP") {
-                let path = std::path::PathBuf::from(temp).join("flatshot.png");
-                let _ = std::fs::write(&path, &png_bytes);
-            }
-
-            let b64 = base64::engine::general_purpose::STANDARD.encode(&png_bytes);
-            Some(format!("data:image/png;base64,{}", b64))
-        }
-    }
-    #[cfg(not(windows))]
-    {
-        None
-    }
-}
-
 // ===== Save clipboard image =====
 #[tauri::command]
 fn save_clipboard_image(data_url: String) {
@@ -2038,31 +1897,6 @@ fn set_clipboard_image(data_url: String) {
     #[cfg(not(windows))]
     {
         let _ = data_url;
-    }
-}
-
-// ===== Show launcher for screenshot (instant, no animations) =====
-// Uses the fullscreen "launcher" window (NOT hushlight — that one is the
-// medium search window now). The screenshot overlay needs the whole screen.
-#[tauri::command]
-fn show_launcher_for_screenshot(app: tauri::AppHandle) {
-    // If hushlight is open, close it instantly — the screenshot overlay
-    // replaces it on screen.
-    if LAUNCHER_OPEN.swap(false, Ordering::SeqCst) {
-        CLOSE_SEQ.fetch_add(1, Ordering::SeqCst);
-        if let Some(hushlight) = app.get_webview_window("hushlight") {
-            win32::window::hide_window(&hushlight);
-        }
-    }
-    if let Some(launcher) = app.get_webview_window("launcher") {
-        fit_launcher_to_screen(&app);
-        win32::window::show_window(&launcher);
-        let _ = launcher.set_focus();
-        let _ = launcher.set_always_on_top(true);
-        // 0.3.0: the launcher page now starts/stops its polling loops
-        // (clipboard, sysmon, battery) on this event instead of polling
-        // blindly forever while the window sits hidden.
-        let _ = app.emit("launcher://force-shown", ());
     }
 }
 
@@ -2854,11 +2688,11 @@ fn wipe_configs() {
     let data_dir = persist::data_dir();
 
     let files = [
-        "blacklist.json",
         "clipboard.json",
         "notes.txt",
         "widgets.json",
         "widget_visibility.json",
+        "desktop_pins.json",
         "icon_recolor.json",
         "settings.json",
         "themes.json",
@@ -2928,59 +2762,7 @@ mod moved_save {
 
 #[cfg(windows)]
 fn refresh_taskbar_apps(handle: &tauri::AppHandle) {
-    // Reconcile persistent blacklist entries with currently open windows.
-    // Match by exe_path (permanent). Remove entries whose exe_path is empty
-    // or matches no current window AND has no valid exe_path (phantom cleanup).
-    //
-    // IMPORTANT: do the Win32 enumeration (get_all_windows_with_exe) BEFORE
-    // taking the AppState lock. That call can take hundreds of ms when the
-    // shell is busy or in a bad post-Modern-Standby state — it does
-    // EnumWindows + OpenProcess + QueryFullProcessImageNameW + SHGetFileInfoW
-    // per visible window, all of which can stall if explorer.exe is hung.
-    // Holding the AppState lock during that work blocks every Tauri command
-    // handler that touches AppState (which is most of them), which in turn
-    // backs up the IPC layer and can trip Windows' 5s "Not Responding"
-    // threshold for the Hush_UI windows. Snapshots in, lock only to write.
-    let all_windows = win32::peek::get_all_windows_with_exe(&[]);
-    let blacklisted_snapshot: Vec<app_state::BlacklistEntry> = {
-        let state = handle.state::<Arc<Mutex<AppState>>>();
-        let s = state.lock();
-        s.blacklisted.clone()
-    };
-
-    let mut new_hwnds: Vec<usize> = Vec::new();
-    let mut valid_entries: Vec<app_state::BlacklistEntry> = Vec::new();
-    for mut entry in blacklisted_snapshot.into_iter() {
-        // Skip entries with empty exe_path (phantom data from old format)
-        if entry.exe_path.is_empty() {
-            continue;
-        }
-
-        // Try to find a current window matching this exe_path
-        if let Some(w) = all_windows.iter().find(|w| w.exe_path == entry.exe_path) {
-            entry.hwnd = w.hwnd;
-            // Update title if we have one
-            if entry.title.is_none() || entry.title.as_deref() != Some(&w.title) {
-                entry.title = Some(w.title.clone());
-            }
-            new_hwnds.push(w.hwnd);
-        } else {
-            // Window not currently open — keep entry (will match when app reopens)
-            entry.hwnd = 0;
-        }
-        valid_entries.push(entry);
-    }
-
-    // Briefly take the lock to write back the reconciled state.
-    let blacklist_hwnds = {
-        let state = handle.state::<Arc<Mutex<AppState>>>();
-        let mut s = state.lock();
-        s.blacklisted = valid_entries;
-        s.blacklisted_hwnds = new_hwnds.clone();
-        new_hwnds
-    };
-
-    match win32::apps::scan_taskbar(&blacklist_hwnds) {
+    match win32::apps::scan_taskbar() {
         Ok(apps) => {
             let state = handle.state::<Arc<Mutex<AppState>>>();
             let mut s = state.lock();

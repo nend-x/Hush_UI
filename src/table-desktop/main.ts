@@ -16,6 +16,7 @@ interface LauncherItem {
   path: string;
   icon_data_url: string | null;
   is_folder: boolean;
+  pinned: boolean;
 }
 
 const root = document.getElementById("mt-root")!;
@@ -154,6 +155,10 @@ function buildTile(item: LauncherItem): HTMLElement {
 }
 
 function updateTile(el: HTMLElement, item: LauncherItem) {
+  // Pin marker — cheap class toggle, keeps the terracotta dot in sync
+  // without touching the icon/label reconciliation below.
+  el.classList.toggle("pinned", item.pinned);
+
   // Label — update only when changed (avoid layout churn).
   const label = el.querySelector(".label") as HTMLElement;
   if (label.textContent !== item.name) {
@@ -196,7 +201,8 @@ function render() {
   }
 
   // Update or create tiles; keep DOM order in sync with the scan order
-  // (folders first, then alphabetical — the backend's deterministic sort).
+  // (pins first in pin order, then folders, then alphabetical — the
+  // backend's deterministic sort).
   let prev: HTMLElement | null = null;
   for (const item of items) {
     let el = tiles.get(item.id);
@@ -252,6 +258,17 @@ function showItemContextMenu(x: number, y: number, item: LauncherItem, tile: HTM
     launchWithSpin(item, tile);
   });
   menu.appendChild(open);
+
+  // Pin to top / Unpin — pinned items float to the start of the grid
+  // (pin order), everything else keeps the deterministic sort.
+  const pin = document.createElement("div");
+  pin.className = "context-menu-item";
+  pin.textContent = item.pinned ? "Unpin" : "Pin to top";
+  pin.addEventListener("click", () => {
+    menu.remove();
+    invoke("set_desktop_item_pinned", { itemId: item.id, pinned: !item.pinned });
+  });
+  menu.appendChild(pin);
 
   const sep1 = document.createElement("div");
   sep1.className = "context-menu-separator";

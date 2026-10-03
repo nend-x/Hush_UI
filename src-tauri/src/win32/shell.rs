@@ -86,10 +86,25 @@ pub fn scan_desktop() -> core::Result<Vec<DesktopItem>> {
         }
     }
 
-    items.sort_by(|a, b| match (a.is_folder, b.is_folder) {
+    // User pins float to the top of the grid (in pin order — the first
+    // pin lands first). Unpinned items keep the deterministic sort:
+    // folders first, then alphabetical by display name.
+    let pins = crate::persist::load_desktop_pins();
+    for it in items.iter_mut() {
+        it.pinned = pins.contains(&it.id);
+    }
+    let pin_rank = |it: &DesktopItem| {
+        pins.iter().position(|p| p == &it.id).unwrap_or(usize::MAX)
+    };
+    items.sort_by(|a, b| match (a.pinned, b.pinned) {
+        (true, true) => pin_rank(a).cmp(&pin_rank(b)),
         (true, false) => std::cmp::Ordering::Less,
         (false, true) => std::cmp::Ordering::Greater,
-        _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+        (false, false) => match (a.is_folder, b.is_folder) {
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+            _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+        },
     });
 
     Ok(items)

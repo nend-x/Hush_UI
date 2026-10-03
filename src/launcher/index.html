@@ -26,7 +26,7 @@
     </div>
 
     <!-- Left side: action buttons. Exit button at the top (reverts everything
-         and quits), then settings, minimize-all, run, blacklist. -->
+         and quits), then settings, minimize-all, run. -->
     <div class="launcher-actions">
       <button class="action-btn exit-btn" id="exit-btn" title="Exit Hush_UI (restore Windows shell)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -50,12 +50,6 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="4 17 10 11 4 5"/>
           <line x1="12" y1="19" x2="20" y2="19"/>
-        </svg>
-      </button>
-      <button class="action-btn" id="blacklist-btn">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 2l9 4v6c0 5.5-3.5 10-9 12-5.5-2-9-6.5-9-12V6l9-4z"/>
-          <line x1="6" y1="6" x2="18" y2="18"/>
         </svg>
       </button>
     </div>
@@ -133,21 +127,6 @@
         <button class="run-btn primary" id="run-ok">OK</button>
       </div>
     </div>
-  </div>
-
-  <!-- Blacklist overlay -->
-  <div class="win-switcher-overlay hidden" id="blacklist-overlay">
-    <div class="blacklist-content">
-      <div class="blacklist-title">Window Blacklist</div>
-      <div class="blacklist-grid" id="blacklist-grid"></div>
-      <div class="blacklist-hint">Blacklisted windows won't appear in switcher or taskbar</div>
-    </div>
-  </div>
-
-  <!-- Screenshot overlay -->
-  <div class="screenshot-overlay hidden" id="screenshot-overlay">
-    <canvas class="screenshot-canvas" id="screenshot-canvas"></canvas>
-    <div class="screenshot-hint" id="screenshot-hint">Select area</div>
   </div>
 
   <!-- Settings overlay -->

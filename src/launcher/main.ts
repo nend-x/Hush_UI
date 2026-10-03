@@ -1,5 +1,5 @@
 /* =========================================================================
-   LAUNCHER main — Spotlight + run dialog + window switcher + blacklist
+   LAUNCHER main — Spotlight + run dialog + window switcher
    ========================================================================= */
 
 import { invoke } from "@tauri-apps/api/core";
@@ -45,10 +45,7 @@ const searchWrap = document.querySelector<HTMLElement>(".launcher-search-wrap")!
 const appsBody = document.getElementById("apps-body")!;
 const minimizeAllBtn = document.getElementById("minimize-all-btn")!;
 const runBtn = document.getElementById("run-btn")!;
-const blacklistBtn = document.getElementById("blacklist-btn")!;
 const exitBtn = document.getElementById("exit-btn")!;
-const blacklistOverlay = document.getElementById("blacklist-overlay")!;
-const blacklistGrid = document.getElementById("blacklist-grid")!;
 const runDialog = document.getElementById("run-dialog")!;
 const runInput = document.getElementById("run-input") as HTMLInputElement;
 const runOkBtn = document.getElementById("run-ok")!;
@@ -65,8 +62,6 @@ const audioMasterVal = document.getElementById("audio-master-val")!;
 const settingsBtn = document.getElementById("settings-btn")!;
 const settingsOverlay = document.getElementById("settings-overlay")!;
 const settingsClose = document.getElementById("settings-close")!;
-const screenshotOverlay = document.getElementById("screenshot-overlay")!;
-const screenshotCanvas = document.getElementById("screenshot-canvas") as HTMLCanvasElement;
 const clipboardClearBtn = document.getElementById("clipboard-clear")!;
 
 // Widget toggle checkboxes
@@ -700,8 +695,6 @@ function resetLauncherDom(): void {
   expandOverlay.classList.remove("expanding", "expanded", "collapsing", "fading");
   searchInput.value = "";
   runDialog.classList.add("hidden");
-  blacklistOverlay.classList.add("hidden");
-  blacklistBtn.classList.remove("active");
   document.querySelectorAll(".context-menu").forEach((el) => el.remove());
   document.querySelectorAll(".modal-backdrop").forEach((el) => el.remove());
   applyFilter();
@@ -1069,16 +1062,6 @@ document.addEventListener("keydown", (e) => {
     return;
   }
 
-  // If blacklist overlay is open
-  if (!blacklistOverlay.classList.contains("hidden")) {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      blacklistOverlay.classList.add("hidden");
-      blacklistBtn.classList.remove("active");
-    }
-    return;
-  }
-
   if (e.key === "Escape") {
     e.preventDefault();
     closeLauncher();
@@ -1224,16 +1207,6 @@ exitBtn.addEventListener("click", () => {
 
 runBtn.addEventListener("click", () => showRunDialog());
 
-blacklistBtn.addEventListener("click", async () => {
-  if (!blacklistOverlay.classList.contains("hidden")) {
-    blacklistOverlay.classList.add("hidden");
-    blacklistBtn.classList.remove("active");
-    return;
-  }
-  blacklistOverlay.classList.remove("hidden");
-  blacklistBtn.classList.add("active");
-  await showBlacklist();
-});
 
 // ===== Run dialog =====
 function showRunDialog() {
@@ -1268,110 +1241,6 @@ runAdminBtn.addEventListener("click", () => {
   }
 });
 
-// ===== Blacklist =====
-async function showBlacklist() {
-  blacklistGrid.innerHTML = "";
-
-  let windows: WindowEntry[] = [];
-  try {
-    windows = await invoke<WindowEntry[]>("get_all_windows");
-  } catch (err) {
-    console.error("get_all_windows failed:", err);
-  }
-
-  let blacklistedEntries: { exe_path: string; title: string | null; hwnd: number }[] = [];
-  try {
-    blacklistedEntries = await invoke("get_blacklist");
-  } catch {}
-
-  const allWindows: { hwnd: number; title: string; icon: string | null; blacklisted: boolean }[] = [];
-
-  for (const w of windows) {
-    allWindows.push({
-      hwnd: w.hwnd,
-      title: w.title,
-      icon: w.icon_data_url,
-      blacklisted: false,
-    });
-  }
-
-  // For blacklisted entries not currently open, show them with their exe_path
-  for (const entry of blacklistedEntries) {
-    if (!allWindows.find((w) => w.hwnd === entry.hwnd && entry.hwnd !== 0)) {
-      allWindows.push({
-        hwnd: entry.hwnd,
-        title: entry.title || entry.exe_path.split(/[\\/]/).pop() || "Unknown",
-        icon: null,
-        blacklisted: true,
-      });
-    }
-  }
-
-  // Sort: blacklisted first
-  allWindows.sort((a, b) => {
-    if (a.blacklisted && !b.blacklisted) return -1;
-    if (!a.blacklisted && b.blacklisted) return 1;
-    return a.title.localeCompare(b.title);
-  });
-
-  for (const w of allWindows) {
-    const row = document.createElement("div");
-    row.className = "blacklist-row";
-    if (w.blacklisted) row.classList.add("pinned");
-
-    const checkbox = document.createElement("div");
-    checkbox.className = "blacklist-checkbox";
-    row.appendChild(checkbox);
-
-    if (w.icon) {
-      const iconWrap = document.createElement("div");
-      iconWrap.className = "blacklist-icon";
-      const img = document.createElement("img");
-      img.src = w.icon;
-      img.alt = w.title;
-      iconWrap.appendChild(img);
-      row.appendChild(iconWrap);
-    } else {
-      const placeholder = document.createElement("div");
-      placeholder.className = "blacklist-icon";
-      placeholder.style.cssText = "display:flex;align-items:center;justify-content:center;color:var(--sand-dim);font-size:11px;font-family:var(--font-display);";
-      placeholder.textContent = (w.title || "?")[0].toUpperCase();
-      row.appendChild(placeholder);
-    }
-
-    const label = document.createElement("div");
-    label.className = "blacklist-label";
-    label.textContent = w.title;
-    row.appendChild(label);
-
-    row.addEventListener("click", () => {
-      const newBlacklisted = !w.blacklisted;
-      w.blacklisted = newBlacklisted;
-      if (newBlacklisted) {
-        row.classList.add("pinned");
-      } else {
-        row.classList.remove("pinned");
-      }
-      invoke("set_blacklisted", { hwnd: w.hwnd, blacklisted: newBlacklisted });
-    });
-
-    blacklistGrid.appendChild(row);
-  }
-
-  if (allWindows.length === 0) {
-    const empty = document.createElement("div");
-    empty.style.cssText = "text-align:center;padding:32px;color:var(--sand-dim);font-size:12px;";
-    empty.textContent = "No open windows";
-    blacklistGrid.appendChild(empty);
-  }
-}
-
-blacklistOverlay.addEventListener("click", (e) => {
-  if (e.target === blacklistOverlay) {
-    blacklistOverlay.classList.add("hidden");
-    blacklistBtn.classList.remove("active");
-  }
-});
 
 // ===== Context menus =====
 function showBackgroundContextMenu(x: number, y: number) {
@@ -1515,133 +1384,6 @@ function showDialog(
 }
 
 // ===== Settings =====
-// ===== Screenshot =====
-// Listen for screenshot events from taskbar button
-listen<string>("screenshot://taken", (event) => {
-  startScreenshotWithData(event.payload);
-});
-
-async function startScreenshotWithData(dataUrl: string) {
-    screenshotOverlay.classList.remove("hidden");
-    const ctx = screenshotCanvas.getContext("2d")!;
-    const img = new Image();
-
-    // Map viewport (CSS px) coordinates to native screenshot pixels so the
-    // crop is 1:1 with the real screen regardless of DPI scaling (Lightshot-style).
-    const toImgCoords = (clientX: number, clientY: number) => {
-      const rect = screenshotCanvas.getBoundingClientRect();
-      const sx = img.naturalWidth / rect.width;
-      const sy = img.naturalHeight / rect.height;
-      return { x: (clientX - rect.left) * sx, y: (clientY - rect.top) * sy };
-    };
-
-    img.onload = () => {
-      // Backing store at native screenshot resolution; the canvas ELEMENT is
-      // stretched over the window by CSS, so the preview stays full-screen.
-      screenshotCanvas.width = img.naturalWidth;
-      screenshotCanvas.height = img.naturalHeight;
-      ctx.drawImage(img, 0, 0);
-      // Dim the screenshot
-      ctx.fillStyle = "rgba(0, 0, 0, 0.3)";
-      ctx.fillRect(0, 0, screenshotCanvas.width, screenshotCanvas.height);
-    };
-    img.src = dataUrl;
-
-    let isSelecting = false;
-    let startX = 0, startY = 0;
-
-    screenshotCanvas.onmousedown = (e) => {
-      isSelecting = true;
-      const p = toImgCoords(e.clientX, e.clientY);
-      startX = p.x;
-      startY = p.y;
-    };
-
-    screenshotCanvas.onmousemove = (e) => {
-      if (!isSelecting) return;
-      const p = toImgCoords(e.clientX, e.clientY);
-      const x = Math.min(startX, p.x);
-      const y = Math.min(startY, p.y);
-      const w = Math.abs(p.x - startX);
-      const h = Math.abs(p.y - startY);
-      // Redraw
-      ctx.clearRect(0, 0, screenshotCanvas.width, screenshotCanvas.height);
-      ctx.drawImage(img, 0, 0);
-      ctx.fillStyle = "rgba(0, 0, 0, 0.3)";
-      ctx.fillRect(0, 0, screenshotCanvas.width, screenshotCanvas.height);
-      // Clear selected area
-      ctx.clearRect(x, y, w, h);
-      ctx.drawImage(img, x, y, w, h, x, y, w, h);
-      // Draw border (constant on-screen thickness regardless of scale)
-      const rect = screenshotCanvas.getBoundingClientRect();
-      ctx.strokeStyle = "rgba(var(--accent-terracotta-rgb), 0.8)";
-      ctx.lineWidth = 2 / (img.naturalWidth / rect.width);
-      ctx.strokeRect(x, y, w, h);
-    };
-
-    screenshotCanvas.onmouseup = (e) => {
-      if (!isSelecting) return;
-      isSelecting = false;
-      const p = toImgCoords(e.clientX, e.clientY);
-      const x = Math.min(startX, p.x);
-      const y = Math.min(startY, p.y);
-      let w = Math.abs(p.x - startX);
-      let h = Math.abs(p.y - startY);
-
-      // Clamp to the captured image bounds
-      const cx = Math.max(0, Math.min(x, img.naturalWidth - 1));
-      const cy = Math.max(0, Math.min(y, img.naturalHeight - 1));
-      w = Math.min(w, img.naturalWidth - cx);
-      h = Math.min(h, img.naturalHeight - cy);
-
-      if (w < 5 || h < 5) {
-        // Too small — just close
-        screenshotOverlay.classList.add("hidden");
-        return;
-      }
-
-      // Extract selected area at NATIVE screen resolution
-      const iw = Math.max(1, Math.round(w));
-      const ih = Math.max(1, Math.round(h));
-      const tempCanvas = document.createElement("canvas");
-      tempCanvas.width = iw;
-      tempCanvas.height = ih;
-      const tempCtx = tempCanvas.getContext("2d")!;
-      tempCtx.drawImage(img, cx, cy, w, h, 0, 0, iw, ih);
-      const selectedDataUrl = tempCanvas.toDataURL("image/png");
-
-      // Copy to system clipboard as a REAL image (CF_DIB + PNG via Win32 —
-      // same approach Lightshot uses). navigator.clipboard is unreliable
-      // inside WebView2 and silently fails for images.
-      invoke("set_clipboard_image", { dataUrl: selectedDataUrl });
-
-      // Save to %TEMP%\flatshot.png via backend
-      invoke("save_clipboard_image", { dataUrl: selectedDataUrl });
-
-      // Add to clipboard widget
-      if (!clipboardItems.includes(selectedDataUrl)) {
-        clipboardItems.unshift(selectedDataUrl);
-        if (clipboardItems.length > 15) clipboardItems.pop();
-        renderClipboard();
-        invoke("save_clipboard", { items: clipboardItems });
-      }
-
-      screenshotOverlay.classList.add("hidden");
-      // Hide launcher if it was only shown for screenshot
-      invoke("close_launcher");
-    };
-
-    // Esc to cancel
-    const escHandler = (ev: KeyboardEvent) => {
-      if (ev.key === "Escape") {
-        screenshotOverlay.classList.add("hidden");
-        document.removeEventListener("keydown", escHandler);
-        // Hide launcher if it was only shown for screenshot
-        invoke("close_launcher");
-      }
-    };
-    document.addEventListener("keydown", escHandler);
-}
 
 // ===== Init =====
 async function init() {
