@@ -17,6 +17,7 @@ export default defineConfig({
         "table-settings": resolve(__dirname, "src/table-settings/index.html"),
         "table-widgets": resolve(__dirname, "src/table-widgets/index.html"),
         "table-desktop": resolve(__dirname, "src/table-desktop/index.html"),
+        note: resolve(__dirname, "src/note/index.html"),
         tutorial: resolve(__dirname, "src/tutorial/index.html"),
       },
     },

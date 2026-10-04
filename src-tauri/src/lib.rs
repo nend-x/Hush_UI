@@ -511,8 +511,12 @@ pub fn run() {
             end_task,
             save_clipboard,
             load_clipboard,
-            save_notes,
-            load_notes,
+            notes_list,
+            note_load,
+            note_save,
+            note_create,
+            note_delete,
+            open_note_window,
             get_system_stats,
             get_battery_status,
             get_volume,
@@ -1412,15 +1416,115 @@ fn load_clipboard() -> Vec<String> {
     persist::load_clipboard()
 }
 
-// ===== Notes =====
+// ===== Notes (remade — numbered note buttons + independent note windows) =====
+// The widget shows one button per note, labeled with the note's stable
+// number. Clicking a button opens an independent always-on-top editor
+// window (label `note-<num>`, URL note/index.html). Numbers never
+// re-flow: with notes 1 2 3, deleting 2 leaves 1 and 3; the next + takes 4.
+
 #[tauri::command]
-fn save_notes(text: String) {
-    persist::save_notes(&text);
+fn notes_list() -> Vec<persist::NoteEntry> {
+    persist::load_note_list()
 }
 
 #[tauri::command]
-fn load_notes() -> String {
-    persist::load_notes()
+fn note_load(num: u32) -> String {
+    persist::load_note_list()
+        .into_iter()
+        .find(|n| n.num == num)
+        .map(|n| n.text)
+        .unwrap_or_default()
+}
+
+#[tauri::command]
+fn note_save(num: u32, text: String) {
+    let mut notes = persist::load_note_list();
+    // Update-only: a stale editor saving after its note was deleted must
+    // not resurrect the entry (its window gets closed by note_delete).
+    if let Some(n) = notes.iter_mut().find(|n| n.num == num) {
+        n.text = text;
+        persist::save_note_list(&notes);
+    }
+}
+
+#[tauri::command]
+fn note_create(app: tauri::AppHandle) -> u32 {
+    let mut notes = persist::load_note_list();
+    let next = notes.iter().map(|n| n.num).max().unwrap_or(0) + 1;
+    notes.push(persist::NoteEntry {
+        num: next,
+        text: String::new(),
+    });
+    persist::save_note_list(&notes);
+    let _ = app.emit("notes://changed", &notes);
+    next
+}
+
+#[tauri::command]
+fn note_delete(app: tauri::AppHandle, num: u32) {
+    let mut notes = persist::load_note_list();
+    let before = notes.len();
+    notes.retain(|n| n.num != num);
+    if notes.len() == before {
+        return; // already gone — don't broadcast a no-op change
+    }
+    persist::save_note_list(&notes);
+    // Tear down the note's editor window if it is open.
+    if let Some(win) = app.get_webview_window(&format!("note-{num}")) {
+        let _ = win.close();
+    }
+    let _ = app.emit("notes://changed", &notes);
+}
+
+/// Open (or focus) the independent editor window for note `num`.
+/// Windows cascade from the top-left of the primary monitor so several
+/// open notes don't stack exactly on top of each other.
+#[tauri::command]
+fn open_note_window(app: tauri::AppHandle, num: u32) {
+    let label = format!("note-{num}");
+    if let Some(existing) = app.get_webview_window(&label) {
+        let _ = existing.show();
+        let _ = existing.set_focus();
+        return;
+    }
+    let url = tauri::WebviewUrl::App("note/index.html".into());
+    let built = tauri::webview::WebviewWindowBuilder::new(&app, &label, url)
+        .title(format!("Hush_UI — Note {num}"))
+        .inner_size(320.0, 400.0)
+        .min_inner_size(240.0, 260.0)
+        .decorations(false)
+        .transparent(true)
+        .resizable(true)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .shadow(false)
+        .focused(false)
+        .visible(false) // positioned + shown by us, like every table
+        .build();
+    let win = match built {
+        Ok(w) => w,
+        Err(e) => {
+            log::error!("open_note_window: failed to build {label}: {e}");
+            return;
+        }
+    };
+
+    // Cascade position in PHYSICAL pixels (monitor coords are physical).
+    if let Some(monitor) = win.primary_monitor().ok().flatten() {
+        let mp = monitor.position();
+        let ms = monitor.size();
+        let size = win.outer_size().unwrap_or_default();
+        let (w, h) = (size.width as i32, size.height as i32);
+        let step = (num % 8) as i32;
+        let x = (mp.x + 160 + step * 26).clamp(mp.x + 10, mp.x + ms.width as i32 - w - 10);
+        let y = (mp.y + 120 + step * 26).clamp(mp.y + 10, mp.y + ms.height as i32 - h - 10);
+        let _ = win.set_position(tauri::PhysicalPosition::new(x, y));
+    }
+
+    let _ = win.show();
+    let _ = win.set_focus();
+    // The page plays its pop-in animation on this.
+    let _ = app.emit("note://shown", num);
 }
 
 // ===== System stats (CPU, RAM, GPU) =====
@@ -2688,6 +2792,7 @@ fn wipe_configs() {
     let files = [
         "clipboard.json",
         "notes.txt",
+        "notes.json",
         "widgets.json",
         "widget_visibility.json",
         "desktop_pins.json",

@@ -86,10 +86,16 @@
       <div class="clipboard-list" id="clipboard-list"></div>
     </div>
 
-    <!-- Notes widget -->
+    <!-- Notes widget (remade — numbered buttons open independent windows) -->
     <div class="widget notes-widget" id="notes-widget">
-      <div class="widget-header">Notes</div>
-      <textarea class="notes-textarea" id="notes-textarea" placeholder="Write something…" spellcheck="false"></textarea>
+      <div class="widget-header-row">
+        <span class="widget-header">Notes</span>
+        <span class="notes-actions">
+          <button class="notes-btn" id="notes-add" title="New note">+</button>
+          <button class="notes-btn" id="notes-del" title="Delete mode">&minus;</button>
+        </span>
+      </div>
+      <div class="notes-list" id="notes-list"></div>
     </div>
 
     <!-- Sysmon widget -->

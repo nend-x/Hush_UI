@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Default capability for Hush_UI",
-  "windows": ["launcher", "hushlight", "screensaver", "notification", "tables", "table-taskbar", "table-settings", "table-widgets", "table-desktop", "tutorial"],
+  "windows": ["launcher", "hushlight", "screensaver", "notification", "tables", "table-taskbar", "table-settings", "table-widgets", "table-desktop", "tutorial", "note-*"],
   "permissions": [
     "core:default",
     "core:event:default",

@@ -756,16 +756,103 @@ html.background-ready, html.background-ready body {
   color: var(--text-primary);
 }
 
-/* Notes widget */
+/* Notes widget — remade: header hosts + (new note) and − (delete mode)
+   on the right, same header-row pattern as the clipboard widget. The body
+   is a wrap of numbered note buttons; clicking one opens an independent
+   note-<num> editor window. */
 .notes-widget {
   left: 24px;
   top: 120px;
   width: 240px;
-  height: 280px;
+  min-height: 120px;
   display: flex;
   flex-direction: column;
 }
 
+.notes-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.notes-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-family: var(--font-display);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  transition: color 140ms var(--ease-out-soft), background-color 140ms var(--ease-out-soft);
+}
+
+.notes-btn:hover {
+  color: var(--text-primary);
+  background: rgba(var(--sand-cream-rgb), 0.08);
+}
+
+/* − armed: danger tint while delete mode is on */
+.notes-btn.active {
+  color: var(--danger);
+  background: rgba(var(--danger-rgb), 0.12);
+}
+
+.notes-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 6px;
+  padding: 4px 12px 12px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.notes-list::-webkit-scrollbar { width: 3px; }
+.notes-list::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 2px; }
+
+.notes-empty {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 2px 0 6px;
+}
+
+.note-btn {
+  min-width: 30px;
+  height: 30px;
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: rgba(var(--bg-espresso-raised-rgb), 0.55);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  user-select: none;
+  transition: color 140ms var(--ease-out-soft),
+              background-color 140ms var(--ease-out-soft),
+              border-color 140ms var(--ease-out-soft);
+}
+
+.note-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+  background: rgba(var(--bg-espresso-raised-rgb), 0.9);
+}
+
+/* Delete mode armed — note buttons offer the danger affordance */
+.notes-widget.delete-mode .note-btn:hover {
+  color: var(--danger);
+  border-color: rgba(var(--danger-rgb), 0.55);
+  background: rgba(var(--danger-rgb), 0.10);
+}
+
+/* Lined-paper textarea — now only the note editor window's body
+   (the widget itself no longer hosts a textarea). */
 .notes-textarea {
   flex: 1;
   width: 100%;
