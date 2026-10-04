@@ -525,10 +525,15 @@ interface Theme {
 const THEME_ICON_RECOLOR: Record<string, { hue: string; sat: string; brightness: string }> = {
   // Neutral gray theme — recolor filter yields desaturated gray icons
   "material3-dark": { hue: "0deg", sat: "0.0", brightness: "0.95" },
+  // Light frosted glass — dark desaturated icons on light surfaces
+  "frosted-glass": { hue: "0deg", sat: "0.0", brightness: "0.40" },
 };
 
 function applyTheme(theme: Theme) {
   const root = document.documentElement;
+  // Expose the theme name for theme-scoped CSS (frosted-glass blur rules
+  // key off :root[data-theme="frosted-glass"] in theme.css).
+  root.dataset.theme = theme.name;
   // Apply EVERY color from the theme as a CSS variable on :root.
   // The keys match the serde-renamed ThemeColors field names, so
   // "bg-espresso" → --bg-espresso, "bg-espresso-rgb" → --bg-espresso-rgb, etc.
