@@ -51,6 +51,14 @@
   --bg-espresso-frosted: var(--bg-espresso);
   --bg-espresso-glass: var(--bg-espresso);
 
+  /* Frost hooks (overdrive24). Flat themes keep these inert; the
+     frosted-glass theme overrides them at the bottom of this file, and
+     its blur rules key off :root[data-theme="frosted-glass"] (set by
+     applyTheme()). */
+  --frost-blur: none;
+  --frost-bg: var(--bg-espresso);
+  --frost-bg-strong: var(--bg-espresso);
+
   /* Gray ramp — outline / variant / on-surface */
   --sand: #8A8A8A;
   --sand-rgb: 138, 138, 138;
@@ -196,4 +204,88 @@ html, body {
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover { background: var(--sand-dim); }
+
+/* =========================================================================
+   FROSTED GLASS — light theme (overdrive24)
+   Snow-paper translucent surfaces with a 16px backdrop frost on the small
+   floating surfaces: movable tables (settings / widgets / desktop / notes /
+   hushlight share .mt-root), the taskbar rail, the tutorial stage, the
+   notification toast and the launcher popups.
+
+   Scope rules:
+   - Everything keys off :root[data-theme="frosted-glass"] (set by
+     applyTheme()). Other themes are completely unaffected — zero cost.
+   - NO fullscreen backdrop-filter anywhere. The launcher has a documented
+     policy (launcher.css "Background policy"): fullscreen blur is the most
+     expensive effect to render and smeared the desktop under GPU load.
+     The launcher and the fullscreen radial picker get translucent frost
+     TINT via --panel-bg / the theme payload instead.
+   - Nested panels inherit the glass from the rgba() surface colors in the
+     theme payload (persist.rs) — they don't need their own blur layers.
+   - Text/icon visibility: dark neutral-cool text ramp ships in the payload,
+     icons recolor dark via THEME_ICON_RECOLOR, and color-scheme: light
+     keeps native controls + scrollbars light.
+   ========================================================================= */
+:root[data-theme="frosted-glass"] {
+  --panel-bg: rgba(240, 244, 249, 0.86);
+  --panel-bg-light: rgba(247, 249, 252, 0.80);
+  --panel-bg-dark: rgba(236, 240, 246, 0.88);
+  --frost-blur: blur(16px) saturate(170%);
+  --frost-bg: rgba(246, 249, 253, 0.84);
+  --frost-bg-strong: rgba(240, 244, 250, 0.90);
+  /* The notification toast reads these (undefined before overdrive) */
+  --surface: var(--frost-bg-strong);
+  --border: rgba(31, 36, 43, 0.14);
+  --accent-muted: #4E5766;
+  color-scheme: light;
+}
+
+/* Window-root surfaces that carry the frost — all small windows */
+:root[data-theme="frosted-glass"] .mt-root,
+:root[data-theme="frosted-glass"] .tut-root,
+:root[data-theme="frosted-glass"] .tt-rail,
+:root[data-theme="frosted-glass"] .toast {
+  background-color: var(--frost-bg);
+  backdrop-filter: var(--frost-blur);
+}
+
+/* Launcher popups — small, blurred */
+:root[data-theme="frosted-glass"] .context-menu,
+:root[data-theme="frosted-glass"] .context-menu-submenu,
+:root[data-theme="frosted-glass"] .modal-dialog {
+  background-color: var(--frost-bg-strong);
+  backdrop-filter: var(--frost-blur);
+}
+
+/* Taskbar/table context menu and the floating name pill: the menu gets
+   the frost, the name pill rides the cursor so it gets tint only. */
+:root[data-theme="frosted-glass"] .tt-context-menu,
+:root[data-theme="frosted-glass"] .tt-name-bar {
+  background-color: var(--frost-bg-strong);
+}
+:root[data-theme="frosted-glass"] .tt-context-menu {
+  backdrop-filter: var(--frost-blur);
+}
+
+/* The movable-table chrome drops its heavy dark shadow for the light
+   elevation shadow from the theme payload */
+:root[data-theme="frosted-glass"] .mt-root {
+  box-shadow: var(--shadow-card);
+}
+
+/* The notification toast's hardcoded dark shadow was tuned for dark
+   themes — soften it for light glass */
+:root[data-theme="frosted-glass"] .toast {
+  box-shadow: 0 10px 32px rgba(15, 23, 42, 0.22);
+}
+
+/* Fallback: no backdrop-filter support → raise surface opacity so text
+   stays readable (the translucent tints alone carry the look). */
+@supports not (backdrop-filter: blur(1px)) {
+  :root[data-theme="frosted-glass"] {
+    --frost-bg: rgba(246, 249, 253, 0.94);
+    --frost-bg-strong: rgba(240, 244, 250, 0.96);
+    --surface: var(--frost-bg-strong);
+  }
+}
 

@@ -17,6 +17,8 @@ export interface ThemePayload {
 export const THEME_ICON_RECOLOR: Record<string, { hue: string; sat: string; brightness: string }> = {
   // Neutral gray theme — recolor filter yields desaturated gray icons
   "material3-dark": { hue: "0deg", sat: "0.0", brightness: "0.95" },
+  // Light frosted glass — dark desaturated icons on light surfaces
+  "frosted-glass": { hue: "0deg", sat: "0.0", brightness: "0.40" },
 };
 
 export function applyThemeColors(colors: Record<string, string>): void {
@@ -31,6 +33,9 @@ export function applyThemeColors(colors: Record<string, string>): void {
 /// load and live theme://changed events.
 export function applyTheme(theme: ThemePayload): void {
   applyThemeColors(theme.colors);
+  // Expose the theme name for theme-scoped CSS (the frosted-glass blur
+  // rules in theme.css key off :root[data-theme="frosted-glass"]).
+  document.documentElement.dataset.theme = theme.name;
   const recolor = THEME_ICON_RECOLOR[theme.name];
   if (recolor) {
     const r = document.documentElement;
