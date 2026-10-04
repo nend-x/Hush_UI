@@ -265,6 +265,13 @@ pub fn run() {
             ] {
                 if let Some(wv) = app.get_webview_window(label) {
                     let _ = wv.as_ref().hide();
+                    // Win11 paints a faint square border around every window
+                    // RECT (independent of shadow:false). Transparent windows
+                    // hosting rounded panels show it as a ghost frame — strip
+                    // it from every window at boot (note windows get it at
+                    // creation in open_note_window).
+                    #[cfg(windows)]
+                    win32::window::remove_dwm_border(&wv);
                 }
             }
 
@@ -1537,6 +1544,11 @@ fn open_note_window(app: tauri::AppHandle, num: u32) {
             return;
         }
     };
+
+    // Strip the Win11 square window-rect border (the ghost frame) from the
+    // freshly created note window too — config windows get it in setup.
+    #[cfg(windows)]
+    win32::window::remove_dwm_border(&win);
 
     // Cascade position in PHYSICAL pixels (monitor coords are physical).
     if let Some(monitor) = win.primary_monitor().ok().flatten() {
