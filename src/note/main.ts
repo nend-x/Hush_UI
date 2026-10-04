@@ -30,11 +30,17 @@ if (Number.isFinite(num)) {
 }
 
 // ===== Pop-in (backend emits note://shown with our num after show+focus)
-listen<number>("note://shown", (e) => {
-  if (e.payload !== num) return;
+function popIn() {
   root.classList.remove("shown");
   void root.offsetWidth;
   root.classList.add("shown");
+}
+
+// The listen() promises are kept — init must await them before telling the
+// backend we're ready (see the 0.4.2 ghost-window fix note in init below).
+const shownReady = listen<number>("note://shown", (e) => {
+  if (e.payload !== num) return;
+  popIn();
 });
 
 // ===== Save (debounced like the old widget textarea; blur flushes) =====
@@ -74,17 +80,17 @@ document.addEventListener("keydown", (e) => {
 
 // ===== Deleted while open → the backend closes this window; belt and
 // braces: if a change event arrives without our note, close ourselves.
-listen<NoteEntry[]>("notes://changed", (e) => {
+const changedReady = listen<NoteEntry[]>("notes://changed", (e) => {
   if (!Number.isFinite(num)) return;
   if (!e.payload.some((n) => n.num === num)) close();
 });
 
 // ===== Theme + icon recolor (same contract as the tables) =====
-listen<ThemePayload>("theme://changed", (e) => {
+const themeReady = listen<ThemePayload>("theme://changed", (e) => {
   applyTheme(e.payload);
 });
 
-listen<boolean>("icon-recolor://changed", (e) => {
+const iconReady = listen<boolean>("icon-recolor://changed", (e) => {
   document.documentElement.classList.toggle("icon-recolor", e.payload);
 });
 
@@ -103,4 +109,15 @@ listen<boolean>("icon-recolor://changed", (e) => {
     textarea.value = await invoke<string>("note_load", { num });
   } catch {}
   textarea.focus();
+
+  // 0.4.2 ghost-window fix: the window is built hidden and the backend
+  // reveals it ONLY on note_window_ready — which we invoke here, after
+  // every listen() subscription has RESOLVED. 0.4.1 fired note://shown
+  // while the page was still booting, the pop-in never ran and the
+  // window stayed invisible (opacity:0) but clickable forever.
+  await Promise.allSettled([shownReady, changedReady, themeReady, iconReady]);
+  try {
+    if (await win.isVisible()) popIn(); // fallback show won the race
+  } catch {}
+  void invoke("note_window_ready", { num }).catch(() => {});
 })();

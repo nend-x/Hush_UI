@@ -517,6 +517,7 @@ pub fn run() {
             note_create,
             note_delete,
             open_note_window,
+            note_window_ready,
             get_system_stats,
             get_battery_status,
             get_volume,
@@ -1479,12 +1480,28 @@ fn note_delete(app: tauri::AppHandle, num: u32) {
 /// Open (or focus) the independent editor window for note `num`.
 /// Windows cascade from the top-left of the primary monitor so several
 /// open notes don't stack exactly on top of each other.
+///
+/// Show lifecycle (0.4.2 fix for the 0.4.1 "ghost window" bug): the
+/// window is built HIDDEN and is revealed only by `note_window_ready`,
+/// which the page invokes once its event listeners are wired. 0.4.1
+/// showed the window and fired `note://shown` in the same tick as the
+/// build — long before the freshly booted WebView2 page could listen —
+/// so the pop-in never ran and the window stayed at its opacity:0
+/// pre-animation state forever: invisible, always-on-top, swallowing
+/// every click near it.
 #[tauri::command]
 fn open_note_window(app: tauri::AppHandle, num: u32) {
     let label = format!("note-{num}");
     if let Some(existing) = app.get_webview_window(&label) {
+        // The page is long-loaded here — resume the webview, reveal the
+        // window and replay the pop-in (the page is subscribed, so this
+        // event cannot be missed). Also self-heals a 0.4.1-era ghost.
+        #[cfg(windows)]
+        win32::window::show_window(&existing);
+        #[cfg(not(windows))]
         let _ = existing.show();
         let _ = existing.set_focus();
+        let _ = app.emit("note://shown", num);
         return;
     }
     let url = tauri::WebviewUrl::App("note/index.html".into());
@@ -1521,10 +1538,41 @@ fn open_note_window(app: tauri::AppHandle, num: u32) {
         let _ = win.set_position(tauri::PhysicalPosition::new(x, y));
     }
 
-    let _ = win.show();
-    let _ = win.set_focus();
-    // The page plays its pop-in animation on this.
-    let _ = app.emit("note://shown", num);
+    // NOT shown here — the page calls note_window_ready when its listeners
+    // are wired (see the doc comment above). Backstop: if the page never
+    // reports (broken load, frozen renderer), reveal it after 4s anyway.
+    // A visible window with a broken page beats an invisible click-eater.
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_secs(4));
+        if let Some(win) = app.get_webview_window(&format!("note-{num}")) {
+            if !win.is_visible().unwrap_or(true) {
+                log::warn!("open_note_window: note_window_ready never arrived for note-{num} — fallback show");
+                #[cfg(windows)]
+                win32::window::show_window(&win);
+                #[cfg(not(windows))]
+                let _ = win.show();
+                let _ = win.set_focus();
+                let _ = app.emit("note://shown", num);
+            }
+        }
+    });
+}
+
+/// The note page reports its event listeners are wired — safe to reveal.
+/// Called by `src/note/main.ts` after every `listen()` subscription has
+/// resolved, so the `note://shown` pop-in event can never be missed.
+#[tauri::command]
+fn note_window_ready(app: tauri::AppHandle, num: u32) {
+    let label = format!("note-{num}");
+    if let Some(win) = app.get_webview_window(&label) {
+        // Same webview-resume/window-reveal pairing every table uses.
+        #[cfg(windows)]
+        win32::window::show_window(&win);
+        #[cfg(not(windows))]
+        let _ = win.show();
+        let _ = win.set_focus();
+        let _ = app.emit("note://shown", num);
+    }
 }
 
 // ===== System stats (CPU, RAM, GPU) =====
