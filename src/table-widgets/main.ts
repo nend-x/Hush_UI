@@ -7,11 +7,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 import { applyTheme, type ThemePayload } from "../shared/theme";
+import { initNotesWidget } from "../shared/notes-widget";
 
 const root = document.getElementById("mt-root")!;
 const greeting = document.getElementById("mt-greeting")!;
 const clipboardList = document.getElementById("clipboard-list")!;
-const notesTextarea = document.getElementById("notes-textarea") as HTMLTextAreaElement;
 const cpuFill = document.getElementById("cpu-fill")!;
 const ramFill = document.getElementById("ram-fill")!;
 const cpuVal = document.getElementById("cpu-val")!;
@@ -262,22 +262,9 @@ clipboardClearBtn.addEventListener("click", () => {
   invoke("set_clipboard_text", { text: "" });
 });
 
-// ===== Notes widget =====
-let notesSaveTimer: number | null = null;
-
-async function loadNotes() {
-  if (document.getElementById("notes-widget")?.style.display === "none") return;
-  try {
-    notesTextarea.value = await invoke<string>("load_notes");
-  } catch {}
-}
-
-notesTextarea.addEventListener("input", () => {
-  if (notesSaveTimer) window.clearTimeout(notesSaveTimer);
-  notesSaveTimer = window.setTimeout(() => {
-    invoke("save_notes", { text: notesTextarea.value });
-  }, 500);
-});
+// ===== Notes widget (remade — shared module) =====
+// Numbered note buttons, + to create, − to arm delete mode. Buttons open
+// independent note-<num> editor windows. See shared/notes-widget.ts.
 
 // Theme + icon recolor come from the shared module — colors and per-theme
 // icon-recolor values are always applied together.
@@ -303,7 +290,7 @@ listen<boolean>("icon-recolor://changed", (e) => {
   } catch {}
   await applyVisibility();
   await renderGreeting();
-  await loadNotes();
+  await initNotesWidget();
   await loadAudio();
   await loadBrightness();
   renderClipboard();

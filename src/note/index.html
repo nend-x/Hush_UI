@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Table — Note</title>
+  <link rel="stylesheet" href="../styles/theme.css" />
+  <link rel="stylesheet" href="../styles/tables.css" />
+  <link rel="stylesheet" href="../styles/launcher.css" />
+</head>
+<body>
+  <div class="mt-root note-root" id="note-root">
+    <div class="mt-header" data-tauri-drag-region>
+      <div class="mt-dots"><span></span><span></span><span></span></div>
+      <span class="mt-title" id="note-title" data-tauri-drag-region>Note</span>
+      <button class="mt-close" id="note-close" title="Close">&times;</button>
+    </div>
+    <textarea class="notes-textarea note-editor" id="note-text" placeholder="Write something…" spellcheck="false"></textarea>
+  </div>
+
+  <script type="module" src="./main.ts"></script>
+</body>
+</html>

@@ -608,7 +608,9 @@
 }
 
 .mt-widgets .clipboard-list { max-height: 130px; }
-.mt-widgets .notes-widget { height: 180px; }
+/* Notes widget (remade): buttons wrap — size to content, keep a floor */
+.mt-widgets .notes-widget { min-height: 96px; height: auto; }
+.mt-widgets .notes-list { max-height: 150px; }
 .mt-widgets .audio-widget {
   position: static;
   transform: none;

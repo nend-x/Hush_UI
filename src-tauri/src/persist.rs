@@ -45,14 +45,48 @@ pub fn save_clipboard(items: &[String]) {
 }
 
 // ===== Notes =====
+// Legacy single-note storage. The 0.4.x notes remake stores notes as a
+// numbered list in notes.json (see NoteEntry below); load_notes() survives
+// ONLY as the migration source — the first launch of the new widget adopts
+// whatever the old shared textarea had as note 1.
 pub fn load_notes() -> String {
     let path = data_dir().join("notes.txt");
     fs::read_to_string(&path).unwrap_or_default()
 }
 
-pub fn save_notes(text: &str) {
-    let path = data_dir().join("notes.txt");
-    let _ = fs::write(&path, text);
+/// One note in the remade notes widget. `num` is the stable 1-based number
+/// shown on the widget button (1, 2, 3 …) — deleting note 2 leaves notes
+/// 1 and 3 numbered as they were; the next created note takes max+1.
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+pub struct NoteEntry {
+    pub num: u32,
+    pub text: String,
+}
+
+pub fn load_note_list() -> Vec<NoteEntry> {
+    let path = data_dir().join("notes.json");
+    if let Ok(s) = fs::read_to_string(&path) {
+        if let Ok(list) = serde_json::from_str::<Vec<NoteEntry>>(&s) {
+            return list;
+        }
+    }
+    // No (valid) notes.json — adopt the legacy single textarea as note 1.
+    let legacy = load_notes();
+    if legacy.trim().is_empty() {
+        Vec::new()
+    } else {
+        vec![NoteEntry {
+            num: 1,
+            text: legacy,
+        }]
+    }
+}
+
+pub fn save_note_list(notes: &[NoteEntry]) {
+    let path = data_dir().join("notes.json");
+    if let Ok(s) = serde_json::to_string_pretty(notes) {
+        let _ = fs::write(&path, s);
+    }
 }
 
 // ===== Widget positions =====

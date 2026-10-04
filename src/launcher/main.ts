@@ -4,6 +4,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, emit } from "@tauri-apps/api/event";
+import { initNotesWidget } from "../shared/notes-widget";
 
 interface LauncherItem {
   id: string;
@@ -52,7 +53,6 @@ const runOkBtn = document.getElementById("run-ok")!;
 const runCancelBtn = document.getElementById("run-cancel")!;
 const runAdminBtn = document.getElementById("run-admin")!;
 const clipboardList = document.getElementById("clipboard-list")!;
-const notesTextarea = document.getElementById("notes-textarea") as HTMLTextAreaElement;
 const cpuFill = document.getElementById("cpu-fill")!;
 const ramFill = document.getElementById("ram-fill")!;
 const cpuVal = document.getElementById("cpu-val")!;
@@ -177,21 +177,9 @@ function renderClipboard() {
   }
 }
 
-// ===== Notes widget =====
-let notesSaveTimer: number | null = null;
-
-async function loadNotesWidget() {
-  try {
-    const text = await invoke<string>("load_notes");
-    notesTextarea.value = text;
-  } catch {}
-  notesTextarea.addEventListener("input", () => {
-    if (notesSaveTimer) clearTimeout(notesSaveTimer);
-    notesSaveTimer = window.setTimeout(() => {
-      invoke("save_notes", { text: notesTextarea.value });
-    }, 500);
-  });
-}
+// ===== Notes widget (remade — shared module) =====
+// Numbered note buttons, + to create, − to arm delete mode. Buttons open
+// independent note-<num> editor windows. See shared/notes-widget.ts.
 
 // ===== Sysmon widget =====
 async function updateSysmon() {
@@ -1403,7 +1391,7 @@ async function init() {
 
   // Load widgets
   loadClipboardWidget();
-  loadNotesWidget();
+  void initNotesWidget();
   loadAudioWidget();
   // 0.3.0 idle fix: sysmon polling now starts/stops with the window
   // (launcher://force-shown / force-hidden) instead of running forever.
