@@ -28,13 +28,14 @@ exe filename is unchanged.
 | banshee18 | v0.4.0 | |
 | valkyrie19 | v0.4.1 | notes widget rework |
 | titan20 | v0.4.2 | tag only — release superseded by myth21 |
-| myth21 | v0.4.3 | current latest — note windows off the main thread |
+| myth21 | v0.4.3 | note windows off the main thread |
+| charley23 | v0.4.4 | current latest — frameless windows (no DWM ghost border), notes widget fits content |
 | milk22 | — | tag only, points at main HEAD (no release yet) |
 
 ## Convention for future releases
 
-- Numbering continues from the last tag: next release is `oracle23`, then
-  `echo24`, `atlas25`, ... Name pool: `oracle`, `echo`, `atlas`, `rune`,
+- Numbering continues from the last tag: next release is `oracle24`, then
+  `echo25`, `atlas26`, ... Name pool: `oracle`, `echo`, `atlas`, `rune`,
   `fable`, `legend`, `saga`, `omen`, `relic`, `veil`.
 - Keep semver in the manifests and the `Hush_UI-x.y.z-portable.exe` asset name;
   the codename+number goes in the tag, release title, and this table.
