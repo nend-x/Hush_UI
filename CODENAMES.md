@@ -29,8 +29,8 @@ exe filename is unchanged.
 | valkyrie19 | v0.4.1 | notes widget rework |
 | titan20 | v0.4.2 | tag only — release superseded by myth21 |
 | myth21 | v0.4.3 | note windows off the main thread |
-| charley23 | v0.4.4 | current latest — frameless windows (no DWM ghost border), notes widget fits content |
 | milk22 | — | tag only, points at main HEAD (no release yet) |
+| charley23 | v0.4.4 | current latest — frameless windows (no DWM ghost border), notes widget fits content |
 
 ## Convention for future releases
 
