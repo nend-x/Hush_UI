@@ -608,8 +608,11 @@
 }
 
 .mt-widgets .clipboard-list { max-height: 130px; }
-/* Notes widget (remade): buttons wrap — size to content, keep a floor */
-.mt-widgets .notes-widget { min-height: 96px; height: auto; }
+/* Notes widget (remade): size to CONTENT. The old reserved floor (96px)
+   left dead space with only one row of note buttons AND pushed the stacked
+   column past the viewport, creating a scrollbar even when everything would
+   fit. The list's own padding (4/12/12) keeps the buttons off the edges. */
+.mt-widgets .notes-widget { min-height: 0; height: auto; }
 .mt-widgets .notes-list { max-height: 150px; }
 .mt-widgets .audio-widget {
   position: static;

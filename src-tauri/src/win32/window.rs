@@ -8,7 +8,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_LAYERED, WS_EX_TRANSPARENT,
     WS_OVERLAPPEDWINDOW, WS_POPUP, WS_VISIBLE,
     IsWindowVisible,};
-use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_CLOAK};
+use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_CLOAK, DWMWA_BORDER_COLOR};
 
 fn hwnd_of(window: &WebviewWindow) -> HWND {
     window.hwnd().expect("hwnd() failed")
@@ -132,6 +132,30 @@ pub fn hide_window(win: &WebviewWindow) {
     win.as_ref().hide().ok();
 }
 
+// DWMWA_COLOR_NONE (0xFFFFFFFE) tells Windows 11 to draw NO window border at
+// all. Defined locally — not every windows crate version re-exports it.
+const DWMWA_COLOR_NONE: u32 = 0xFFFF_FFFE;
+
+/// Strip the Windows 11 DWM border from a window's whole rectangle.
+///
+/// Win11 paints a faint 1px border around the WINDOW RECT of every top-level
+/// window — independent of the DWM drop shadow, so `shadow: false` (set on
+/// every window here) does NOT remove it. All Hush_UI windows are transparent
+/// rectangles hosting rounded panels, so that square hairline floats around
+/// the rounded content: the "almost invisible square frame" on every window.
+/// Windows 10 draws no such border and rejects the attribute (ignored).
+pub fn remove_dwm_border(window: &WebviewWindow) {
+    let hwnd = hwnd_of(window);
+    unsafe {
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_BORDER_COLOR,
+            &DWMWA_COLOR_NONE as *const _ as *const _,
+            std::mem::size_of::<u32>() as u32,
+        );
+    }
+}
+
 pub fn apply_no_activate(window: &WebviewWindow) -> windows::core::Result<()> {
     let hwnd = hwnd_of(window);
     unsafe {
@@ -169,11 +193,14 @@ pub fn apply_no_activate(window: &WebviewWindow) -> windows::core::Result<()> {
             std::mem::size_of::<u32>() as u32,
         );
 
-        // 4. Border color
+        // 4. Border color — NONE. The old espresso COLORREF was still a
+        // square hairline hugging the WINDOW RECT (not the rounded panel):
+        // the "ghost frame". COLOR_NONE removes the Win11 border entirely
+        // (Win10 has no per-window border and rejects the attribute).
         let _ = DwmSetWindowAttribute(
             hwnd,
             DWMWA_BORDER_COLOR,
-            &dark_colorref as *const _ as *const _,
+            &DWMWA_COLOR_NONE as *const _ as *const _,
             std::mem::size_of::<u32>() as u32,
         );
 
