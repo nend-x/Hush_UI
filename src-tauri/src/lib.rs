@@ -1489,7 +1489,19 @@ fn note_delete(app: tauri::AppHandle, num: u32) {
 /// so the pop-in never ran and the window stayed at its opacity:0
 /// pre-animation state forever: invisible, always-on-top, swallowing
 /// every click near it.
-#[tauri::command]
+///
+/// MUST stay an ASYNC command (0.4.3): this is the only runtime window
+/// creation in the app, and a sync command executes ON the main thread
+/// — inside the WebView2 IPC dispatch of the calling webview. Building
+/// a new WebView2 inline from there has to pump a nested message loop,
+/// which re-enters the IPC path with the widget table's own polling
+/// invokes still in flight and wedges the main thread for good. Every
+/// backend operation dies from that point: + / − hang, closing a table
+/// plays its pop-out but the hide never runs (the "ghost" window), the
+/// picker can't open any table. An async command runs on the async
+/// runtime instead — build() then dispatches the actual creation to an
+/// IDLE main loop, which is the safe, canonical path.
+#[tauri::command(async)]
 fn open_note_window(app: tauri::AppHandle, num: u32) {
     let label = format!("note-{num}");
     if let Some(existing) = app.get_webview_window(&label) {
