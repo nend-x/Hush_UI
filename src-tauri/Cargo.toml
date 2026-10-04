@@ -1,6 +1,6 @@
 [package]
 name = "hush_ui"
-version = "0.4.0"
+version = "0.4.1"
 description = "Hush_UI — tables update of the Hush_UI Windows shell replacement"
 authors = ["Hush_UI contributors"]
 edition = "2021"
