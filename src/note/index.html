@@ -12,10 +12,10 @@
   <div class="mt-root note-root" id="note-root">
     <div class="mt-header" data-tauri-drag-region>
       <div class="mt-dots"><span></span><span></span><span></span></div>
-      <span class="mt-title" id="note-title" data-tauri-drag-region>Note</span>
-      <button class="mt-close" id="note-close" title="Close">&times;</button>
+      <span class="mt-title" id="note-title" data-tauri-drag-region data-i18n="nt.title">Note</span>
+      <button class="mt-close" id="note-close" data-i18n-title="nt.close" title="Close">&times;</button>
     </div>
-    <textarea class="notes-textarea note-editor" id="note-text" placeholder="Write something…" spellcheck="false"></textarea>
+    <textarea class="notes-textarea note-editor" id="note-text" data-i18n-ph="nt.ph" placeholder="Write something…" spellcheck="false"></textarea>
   </div>
 
   <script type="module" src="./main.ts"></script>

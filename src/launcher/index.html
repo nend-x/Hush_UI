@@ -19,23 +19,23 @@
          focus that window, click the widget chrome to open the full
          window-switcher overlay. -->
     <div class="widget apps-widget" id="apps-widget">
-      <div class="widget-header">Apps</div>
+      <div class="widget-header" data-i18n="ln.apps">Apps</div>
       <div class="apps-body" id="apps-body">
-        <div class="apps-empty">No open windows</div>
+        <div class="apps-empty" data-i18n="ln.noWindows">No open windows</div>
       </div>
     </div>
 
     <!-- Left side: action buttons. Exit button at the top (reverts everything
          and quits), then settings, minimize-all, run. -->
     <div class="launcher-actions">
-      <button class="action-btn exit-btn" id="exit-btn" title="Exit Hush_UI (restore Windows shell)">
+      <button class="action-btn exit-btn" id="exit-btn" data-i18n-title="ln.exitTitle" title="Exit Hush_UI (restore Windows shell)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
           <polyline points="16 17 21 12 16 7"/>
           <line x1="21" y1="12" x2="9" y2="12"/>
         </svg>
       </button>
-      <button class="action-btn" id="settings-btn" title="Settings">
+      <button class="action-btn" id="settings-btn" data-i18n-title="ln.settingsTitle" title="Settings">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="3"/>
           <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
@@ -61,6 +61,7 @@
         class="launcher-search"
         id="search"
         placeholder="Hushlight"
+        data-i18n-ph="ln.searchPh"
         autocomplete="off"
         spellcheck="false"
         autofocus
@@ -80,7 +81,7 @@
     <!-- Clipboard widget -->
     <div class="widget clipboard-widget" id="clipboard-widget">
       <div class="widget-header-row">
-        <span class="widget-header">Clipboard</span>
+        <span class="widget-header" data-i18n="ln.clipboard">Clipboard</span>
         <button class="clipboard-clear" id="clipboard-clear">×</button>
       </div>
       <div class="clipboard-list" id="clipboard-list"></div>
@@ -89,10 +90,10 @@
     <!-- Notes widget (remade — numbered buttons open independent windows) -->
     <div class="widget notes-widget" id="notes-widget">
       <div class="widget-header-row">
-        <span class="widget-header">Notes</span>
+        <span class="widget-header" data-i18n="ln.notes">Notes</span>
         <span class="notes-actions">
-          <button class="notes-btn" id="notes-add" title="New note">+</button>
-          <button class="notes-btn" id="notes-del" title="Delete mode">&minus;</button>
+          <button class="notes-btn" id="notes-add" data-i18n-title="ln.newNote" title="New note">+</button>
+          <button class="notes-btn" id="notes-del" data-i18n-title="ln.deleteMode" title="Delete mode">&minus;</button>
         </span>
       </div>
       <div class="notes-list" id="notes-list"></div>
@@ -100,7 +101,7 @@
 
     <!-- Sysmon widget -->
     <div class="widget sysmon-widget" id="sysmon-widget">
-      <div class="widget-header">System</div>
+      <div class="widget-header" data-i18n="ln.system">System</div>
       <div class="sysmon-body">
         <div class="sysmon-row"><span>CPU</span><div class="sysmon-bar"><div class="sysmon-fill" id="cpu-fill"></div></div><span id="cpu-val">0%</span></div>
         <div class="sysmon-row"><span>RAM</span><div class="sysmon-bar"><div class="sysmon-fill" id="ram-fill"></div></div><span id="ram-val">0%</span></div>
@@ -110,10 +111,10 @@
 
     <!-- Audio mixer widget -->
     <div class="widget audio-widget" id="audio-widget">
-      <div class="widget-header">Volume</div>
+      <div class="widget-header" data-i18n="ln.volume">Volume</div>
       <div class="audio-body">
         <div class="audio-master-row">
-          <span class="audio-label">Master</span>
+          <span class="audio-label" data-i18n="ln.master">Master</span>
           <input type="range" class="audio-slider" id="audio-master-slider" min="0" max="100" value="50" />
           <span class="audio-val" id="audio-master-val">50%</span>
         </div>
@@ -125,12 +126,12 @@
   <div class="run-dialog hidden" id="run-dialog">
     <div class="run-dialog-content">
       <div class="run-input-wrap">
-        <input type="text" class="run-input" id="run-input" placeholder="Enter command…" autocomplete="off" spellcheck="false" />
+        <input type="text" class="run-input" id="run-input" data-i18n-ph="ln.runPh" placeholder="Enter command…" autocomplete="off" spellcheck="false" />
       </div>
       <div class="run-actions">
-        <button class="run-btn" id="run-admin">Admin</button>
-        <button class="run-btn" id="run-cancel">Cancel</button>
-        <button class="run-btn primary" id="run-ok">OK</button>
+        <button class="run-btn" id="run-admin" data-i18n="ln.admin">Admin</button>
+        <button class="run-btn" id="run-cancel" data-i18n="ln.cancel">Cancel</button>
+        <button class="run-btn primary" id="run-ok" data-i18n="ln.ok">OK</button>
       </div>
     </div>
   </div>
@@ -139,44 +140,42 @@
   <div class="settings-overlay hidden" id="settings-overlay">
     <div class="settings-content">
       <div class="settings-header">
-        <span class="settings-title">Settings</span>
+        <span class="settings-title" data-i18n="st.title">Settings</span>
         <button class="settings-close" id="settings-close">&times;</button>
       </div>
       <div class="settings-section">
-        <div class="settings-section-title">Widgets</div>
+        <div class="settings-section-title" data-i18n="st.widgets">Widgets</div>
         <div class="settings-row">
-          <span class="settings-label">Clipboard</span>
+          <span class="settings-label" data-i18n="st.clipboard">Clipboard</span>
           <label class="toggle"><input type="checkbox" id="toggle-clipboard-widget" checked /><span class="toggle-slider"></span></label>
         </div>
         <div class="settings-row">
-          <span class="settings-label">Notes</span>
+          <span class="settings-label" data-i18n="st.notes">Notes</span>
           <label class="toggle"><input type="checkbox" id="toggle-notes-widget" checked /><span class="toggle-slider"></span></label>
         </div>
         <div class="settings-row">
-          <span class="settings-label">System Monitor</span>
+          <span class="settings-label" data-i18n="st.sysmon">System Monitor</span>
           <label class="toggle"><input type="checkbox" id="toggle-sysmon-widget" checked /><span class="toggle-slider"></span></label>
         </div>
         <div class="settings-row">
-          <span class="settings-label">Volume</span>
+          <span class="settings-label" data-i18n="st.volume">Volume</span>
           <label class="toggle"><input type="checkbox" id="toggle-audio-widget" checked /><span class="toggle-slider"></span></label>
         </div>
         <div class="settings-row">
-          <span class="settings-label">Apps</span>
+          <span class="settings-label" data-i18n="ln.apps">Apps</span>
           <label class="toggle"><input type="checkbox" id="toggle-apps-widget" checked /><span class="toggle-slider"></span></label>
         </div>
       </div>
       <div class="settings-section">
-        <div class="settings-section-title">Appearance</div>
+        <div class="settings-section-title" data-i18n="st.appearance">Appearance</div>
         <div class="settings-row">
-          <span class="settings-label">Theme</span>
+          <span class="settings-label" data-i18n="st.theme">Theme</span>
           <select class="settings-select" id="theme-select">
-            <option value="sand-cream">Sand Cream</option>
-            <option value="earthly-green">Earthly Green</option>
-            <option value="silver-lining">Silver Lining</option>
+            <option value="material3-dark">Material 3 Dark</option>
           </select>
         </div>
         <div class="settings-row">
-          <span class="settings-label">Icon Recoloring</span>
+          <span class="settings-label" data-i18n="st.iconRecolor">Icon Recoloring</span>
           <label class="toggle"><input type="checkbox" id="toggle-icon-recolor" /><span class="toggle-slider"></span></label>
         </div>
       </div>

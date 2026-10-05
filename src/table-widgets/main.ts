@@ -7,6 +7,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 import { applyTheme, type ThemePayload } from "../shared/theme";
+import { initI18n, t } from "../shared/i18n";
 import { initNotesWidget } from "../shared/notes-widget";
 
 const root = document.getElementById("mt-root")!;
@@ -56,7 +57,7 @@ document.addEventListener("keydown", (e) => {
 
 // ===== Greeting =====
 async function renderGreeting() {
-  greeting.textContent = "Hush table";
+  greeting.textContent = t("wg.hushTable");
 }
 
 
@@ -219,7 +220,7 @@ function renderClipboard() {
     const el = document.createElement("div");
     el.className = "clipboard-item";
     el.textContent = item.length > 40 ? item.substring(0, 40) + "…" : item;
-    el.title = item.startsWith("data:image/") ? "Screenshot (click to re-copy)" : item;
+    el.title = item.startsWith("data:image/") ? t("wg.screenshot") : item;
     el.addEventListener("click", () => {
       if (item.startsWith("data:image/")) {
         invoke("set_clipboard_image", { dataUrl: item });
@@ -233,7 +234,7 @@ function renderClipboard() {
     const empty = document.createElement("div");
     empty.className = "clipboard-item";
     empty.style.color = "var(--sand-dim)";
-    empty.textContent = "No history";
+    empty.textContent = t("wg.noHistory");
     clipboardList.appendChild(empty);
   }
 }
@@ -279,6 +280,7 @@ listen<boolean>("icon-recolor://changed", (e) => {
 
 // ===== Init =====
 (async function init() {
+  await initI18n();
   try {
     const theme = await invoke<ThemePayload | null>("get_active_theme");
     if (theme) applyTheme(theme);

@@ -9,6 +9,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 import { applyTheme as applyThemeShared, type ThemePayload } from "../shared/theme";
+import { initI18n, t } from "../shared/i18n";
 
 type Theme = ThemePayload;
 
@@ -43,6 +44,7 @@ interface Settings {
   clock_24h?: boolean;
   pie_clock?: boolean;
   show_desktop_grid?: boolean;
+  language?: string;
 }
 
 const WIDGET_IDS = [
@@ -56,6 +58,7 @@ const WIDGET_IDS = [
 const sliderHold = document.getElementById("slider-hold") as HTMLInputElement;
 const holdVal = document.getElementById("hold-val")!;
 const themeSelect = document.getElementById("theme-select") as HTMLSelectElement;
+const languageSelect = document.getElementById("language-select") as HTMLSelectElement;
 const toggleIconRecolor = document.getElementById("toggle-icon-recolor") as HTMLInputElement;
 const segClock = document.getElementById("seg-clock")!;
 const togglePieClock = document.getElementById("toggle-pie-clock") as HTMLInputElement;
@@ -77,6 +80,7 @@ function currentSettings(): Settings {
     tables_hold_ms: parseInt(sliderHold.value, 10),
     clock_24h: segClock.querySelector("button.active")?.getAttribute("data-value") === "24",
     pie_clock: togglePieClock.checked,
+    language: languageSelect.value,
   };
 }
 
@@ -89,9 +93,10 @@ async function load() {
   try {
     const s = await invoke<Settings>("load_settings");
     sliderHold.value = String(s.tables_hold_ms ?? 80);
-    holdVal.textContent = `${sliderHold.value} ms`;
+    holdVal.textContent = `${sliderHold.value} ${t("st.ms")}`;
     setSegClock(s.clock_24h ?? true);
     togglePieClock.checked = s.pie_clock ?? true;
+    if (s.language === "ru" || s.language === "en") languageSelect.value = s.language;
   } catch {}
 
   try {
@@ -120,8 +125,19 @@ function setSegClock(is24: boolean) {
 
 // ===== Change handlers — save immediately (same as the launcher overlay) =====
 sliderHold.addEventListener("input", () => {
-  holdVal.textContent = `${sliderHold.value} ms`;
+  holdVal.textContent = `${sliderHold.value} ${t("st.ms")}`;
   saveSettings();
+});
+
+// The language row — save_settings validates + broadcasts settings://changed,
+// and this window's own i18n module flips its labels in place with the rest.
+languageSelect.addEventListener("change", () => {
+  saveSettings();
+});
+
+// Re-render dynamic (non data-i18n) strings when the language switches.
+listen("i18n:changed", () => {
+  holdVal.textContent = `${sliderHold.value} ${t("st.ms")}`;
 });
 
 segClock.addEventListener("click", (e) => {
@@ -192,15 +208,16 @@ btnClearIcons.addEventListener("click", async () => {
   try {
     await invoke("clear_icon_cache");
   } catch {}
-  btnClearIcons.textContent = "Cleared";
+  btnClearIcons.textContent = t("st.cleared");
   setTimeout(() => {
     btnClearIcons.classList.remove("active");
-    btnClearIcons.textContent = "Clear";
+    btnClearIcons.textContent = t("st.clear");
   }, 900);
 });
 
 // ===== Init =====
 (async function init() {
+  await initI18n();
   await loadInitialTheme();
   await load();
 })();

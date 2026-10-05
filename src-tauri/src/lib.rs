@@ -1900,6 +1900,13 @@ fn save_settings(settings: serde_json::Value, app: tauri::AppHandle) {
     if let Some(v) = settings.get("dimmer_level").and_then(|v| v.as_f64()) {
         current.dimmer_level = v.clamp(0.0, 1.0);
     }
+    if let Some(v) = settings.get("language").and_then(|v| v.as_str()) {
+        // Only the shipped dictionaries are accepted; anything else keeps
+        // the current value (the frontend falls back to en regardless).
+        if v == "en" || v == "ru" {
+            current.language = v.to_string();
+        }
+    }
     persist::save_settings(&current);
 
     // The hold threshold lives in the keyboard hook — keep it in sync.
@@ -1913,12 +1920,15 @@ fn save_settings(settings: serde_json::Value, app: tauri::AppHandle) {
     win32::dimmer::set_level(current.dimmer_level);
 
     // Taskbar clock and the launcher react to format/behavior changes live.
+    // language rides the same broadcast — every window's i18n module
+    // listens for it and re-translates in place (src/shared/i18n.ts).
     let _ = app.emit(
         "settings://changed",
         serde_json::json!({
             "clock_24h": current.clock_24h,
             "pie_clock": current.pie_clock,
             "show_desktop_grid": current.show_desktop_grid,
+            "language": current.language,
         }),
     );
     log::info!("Settings saved — theme: {}", current.theme);

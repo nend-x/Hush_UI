@@ -14,6 +14,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import type { NoteEntry } from "../shared/notes-widget";
 import { applyTheme, type ThemePayload } from "../shared/theme";
+import { initI18n, t } from "../shared/i18n";
 
 const win = getCurrentWindow();
 
@@ -25,8 +26,13 @@ const title = document.getElementById("note-title")!;
 const textarea = document.getElementById("note-text") as HTMLTextAreaElement;
 
 if (Number.isFinite(num)) {
-  title.textContent = `Note ${num}`;
-  document.title = `Hush_UI — Note ${num}`;
+  // Re-rendered on i18n:changed too — the title is dynamic, not data-i18n.
+  const renderTitle = () => {
+    title.textContent = `${t("nt.title")} ${num}`;
+    document.title = `Hush_UI — ${t("nt.title")} ${num}`;
+  };
+  renderTitle();
+  window.addEventListener("i18n:changed", renderTitle);
 }
 
 // ===== Pop-in (backend emits note://shown with our num after show+focus)
@@ -96,6 +102,7 @@ const iconReady = listen<boolean>("icon-recolor://changed", (e) => {
 
 // ===== Init =====
 (async function init() {
+  await initI18n();
   try {
     const theme = await invoke<ThemePayload | null>("get_active_theme");
     if (theme) applyTheme(theme);

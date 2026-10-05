@@ -13,6 +13,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { applyTheme, type ThemePayload } from "../shared/theme";
+import { initI18n, t } from "../shared/i18n";
 
 interface TaskbarApp {
   id: string;
@@ -250,7 +251,7 @@ function showContextMenu(anchor: HTMLElement, app: TaskbarApp) {
 
   const endTask = document.createElement("div");
   endTask.className = "tt-context-menu-item danger";
-  endTask.textContent = "End task";
+  endTask.textContent = t("tb.endTask");
   endTask.addEventListener("click", () => {
     menu.remove();
     invoke("end_task", { appId: app.id });
@@ -323,6 +324,7 @@ listen("table://taskbar-shown", () => {
 });
 
 (async function init() {
+  await initI18n();
   await loadInitialTheme();
   try {
     apps = await invoke<TaskbarApp[]>("get_taskbar_apps");
