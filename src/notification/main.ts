@@ -11,7 +11,6 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { applyTheme, type ThemePayload } from "../shared/theme";
 
 const toast = document.getElementById("toast")!;
 const titleEl = document.getElementById("toast-title")!;
@@ -62,12 +61,3 @@ listen("notify://hide", () => {
     invoke("notification_close_finished");
   }, 380);
 });
-
-// ===== Theme =====
-// The toast used to never apply themes (--surface had no value, so it fell
-// back to a hardcoded dark card under EVERY theme). Follow the active
-// theme like every other surface: apply at startup, then live updates.
-invoke<ThemePayload | null>("get_active_theme")
-  .then((theme) => { if (theme) applyTheme(theme); })
-  .catch(() => {});
-listen<ThemePayload>("theme://changed", (e) => applyTheme(e.payload));
