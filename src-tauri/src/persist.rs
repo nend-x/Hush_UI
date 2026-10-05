@@ -376,10 +376,8 @@ pub struct ThemesConfig {
     pub themes: Vec<Theme>,
 }
 
-/// Current themes.json schema version. v3: adds the frosted-glass theme
-/// (overdrive24). Older files are rewritten with the current defaults so
-/// every install gains the new theme while keeping material3-dark active.
-const THEMES_VERSION: u32 = 3;
+/// Current themes.json schema version.
+const THEMES_VERSION: u32 = 2;
 
 pub fn default_themes() -> ThemesConfig {
     ThemesConfig {
@@ -433,61 +431,6 @@ pub fn default_themes() -> ThemesConfig {
                     shadow_popup: "0 1px 3px rgba(0, 0, 0, 0.30), 0 4px 10px rgba(0, 0, 0, 0.25)".to_string(),
                     shadow_icon_hover: "0 1px 2px rgba(0, 0, 0, 0.20)".to_string(),
                     shadow_card: "0 8px 24px rgba(0, 0, 0, 0.45)".to_string(),
-                },
-            },
-            // ===== frosted-glass (overdrive24) — light frosted glass =====
-            // Snow-paper translucent surfaces with a 16px backdrop frost.
-            // Surfaces ship as rgba() so nested panels pick up the glass
-            // look without their own blur layers; the blur itself is applied
-            // by theme.css under :root[data-theme="frosted-glass"] and ONLY
-            // on small surfaces (the launcher keeps its documented
-            // no-fullscreen-blur policy). Dark neutral-cool text ramp keeps
-            // contrast on light glass; icons recolor dark (see theme.ts).
-            Theme {
-                name: "frosted-glass".to_string(),
-                active: false,
-                colors: ThemeColors {
-                    // Surfaces — translucent snow/porcelain tints
-                    bg_espresso: "rgba(247, 249, 252, 0.80)".to_string(),
-                    bg_espresso_rgb: "247, 249, 252".to_string(),
-                    bg_espresso_deep: "rgba(238, 242, 247, 0.84)".to_string(),
-                    bg_espresso_deep_rgb: "238, 242, 247".to_string(),
-                    bg_espresso_raised: "rgba(255, 255, 255, 0.72)".to_string(),
-                    bg_espresso_raised_rgb: "255, 255, 255".to_string(),
-                    // Frosted washes — the actual glass tints
-                    bg_espresso_frosted: "rgba(249, 251, 254, 0.66)".to_string(),
-                    bg_espresso_glass: "rgba(251, 253, 255, 0.58)".to_string(),
-                    // Cool gray ramp — outline / variant / on-surface
-                    sand: "#6D7480".to_string(),
-                    sand_rgb: "109, 116, 128".to_string(),
-                    sand_bright: "#39404B".to_string(),
-                    sand_bright_rgb: "57, 64, 75".to_string(),
-                    sand_dim: "#B4BAC3".to_string(),
-                    sand_dim_rgb: "180, 186, 195".to_string(),
-                    sand_cream: "#1F242B".to_string(),
-                    sand_cream_rgb: "31, 36, 43".to_string(),
-                    // Accents — slate (hover/selection states)
-                    accent_terracotta: "#4E5766".to_string(),
-                    accent_terracotta_rgb: "78, 87, 102".to_string(),
-                    accent_caramel: "#69737F".to_string(),
-                    accent_caramel_rgb: "105, 115, 127".to_string(),
-                    accent_soft: "rgba(78, 87, 102, 0.12)".to_string(),
-                    border_subtle: "rgba(31, 36, 43, 0.10)".to_string(),
-                    border_strong: "rgba(31, 36, 43, 0.22)".to_string(),
-                    status_running: "#5A6472".to_string(),
-                    status_pinned: "#9AA1AC".to_string(),
-                    // Danger — muted brick, visible on light glass
-                    danger: "#8A5A5A".to_string(),
-                    danger_rgb: "138, 90, 90".to_string(),
-                    // Text — dark ramp for light surfaces
-                    text_primary: "#1B2026".to_string(),
-                    text_secondary: "#3A414B".to_string(),
-                    text_muted: "#6E7480".to_string(),
-                    // Shadows — soft, low-opacity (light theme calibration)
-                    shadow_window: "0 1px 3px rgba(15, 23, 42, 0.10)".to_string(),
-                    shadow_popup: "0 1px 3px rgba(15, 23, 42, 0.12), 0 4px 10px rgba(15, 23, 42, 0.10)".to_string(),
-                    shadow_icon_hover: "0 1px 2px rgba(15, 23, 42, 0.12)".to_string(),
-                    shadow_card: "0 8px 24px rgba(15, 23, 42, 0.16)".to_string(),
                 },
             },
         ],
