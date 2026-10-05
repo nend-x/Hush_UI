@@ -31,12 +31,11 @@ exe filename is unchanged.
 | myth21 | v0.4.3 | note windows off the main thread |
 | milk22 | — | tag only, points at main HEAD (no release yet) |
 | charley23 | v0.4.4 | current latest — frameless windows (no DWM ghost border), notes widget fits content |
-| overdrive24 | v0.5.0 | pre-release — frosted glass light theme (Material 3 Dark stays default) |
 
 ## Convention for future releases
 
-- Numbering continues from the last tag: next release is `oracle25`, then
-  `echo26`, `atlas27`, ... Name pool: `oracle`, `echo`, `atlas`, `rune`,
+- Numbering continues from the last tag: next release is `oracle24`, then
+  `echo25`, `atlas26`, ... Name pool: `oracle`, `echo`, `atlas`, `rune`,
   `fable`, `legend`, `saga`, `omen`, `relic`, `veil`.
 - Keep semver in the manifests and the `Hush_UI-x.y.z-portable.exe` asset name;
   the codename+number goes in the tag, release title, and this table.
