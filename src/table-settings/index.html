@@ -12,90 +12,97 @@
   <div class="mt-root" id="mt-root">
     <div class="mt-header" data-tauri-drag-region>
       <div class="mt-dots"><span></span><span></span><span></span></div>
-      <span class="mt-title" data-tauri-drag-region>Settings</span>
-      <button class="mt-close" id="mt-close" title="Close">&times;</button>
+      <span class="mt-title" data-tauri-drag-region data-i18n="st.title">Settings</span>
+      <button class="mt-close" id="mt-close" data-i18n-title="st.close" title="Close">&times;</button>
     </div>
 
     <div class="mt-body">
       <div class="settings-section">
-        <div class="settings-section-title">Appearance</div>
+        <div class="settings-section-title" data-i18n="st.appearance">Appearance</div>
         <div class="settings-row">
-          <span class="settings-label">Theme</span>
+          <span class="settings-label" data-i18n="st.theme">Theme</span>
           <select class="settings-select" id="theme-select">
             <option value="material3-dark">Material 3 Dark</option>
             <!-- old themes (sand-cream / earthly-green / silver-lining) retired -->
           </select>
         </div>
         <div class="settings-row">
-          <span class="settings-label">Icon Recoloring</span>
+          <span class="settings-label" data-i18n="st.language">Language</span>
+          <select class="settings-select" id="language-select">
+            <option value="en">English</option>
+            <option value="ru">Русский</option>
+          </select>
+        </div>
+        <div class="settings-row">
+          <span class="settings-label" data-i18n="st.iconRecolor">Icon Recoloring</span>
           <label class="toggle"><input type="checkbox" id="toggle-icon-recolor" /><span class="toggle-slider"></span></label>
         </div>
       </div>
 
       <div class="settings-section">
-        <div class="settings-section-title">Tables</div>
+        <div class="settings-section-title" data-i18n="st.tables">Tables</div>
         <div class="settings-row">
-          <span class="settings-label">Win hold delay</span>
+          <span class="settings-label" data-i18n="st.winHold">Win hold delay</span>
           <span class="settings-slider-val" id="hold-val">80 ms</span>
         </div>
         <div class="settings-slider-row">
           <input type="range" class="settings-slider" id="slider-hold" min="40" max="600" step="10" value="80" />
         </div>
-        <div class="settings-hint">How long Win must be held before the tables appear. A quick tap still opens hushlight.</div>
+        <div class="settings-hint" data-i18n="st.holdHint">How long Win must be held before the tables appear. A quick tap still opens hushlight.</div>
       </div>
 
       <div class="settings-section">
-        <div class="settings-section-title">Widgets</div>
+        <div class="settings-section-title" data-i18n="st.widgets">Widgets</div>
         <div class="settings-row">
-          <span class="settings-label">Clipboard</span>
+          <span class="settings-label" data-i18n="st.clipboard">Clipboard</span>
           <label class="toggle"><input type="checkbox" id="toggle-clipboard-widget" checked /><span class="toggle-slider"></span></label>
         </div>
         <div class="settings-row">
-          <span class="settings-label">Notes</span>
+          <span class="settings-label" data-i18n="st.notes">Notes</span>
           <label class="toggle"><input type="checkbox" id="toggle-notes-widget" checked /><span class="toggle-slider"></span></label>
         </div>
         <div class="settings-row">
-          <span class="settings-label">System Monitor</span>
+          <span class="settings-label" data-i18n="st.sysmon">System Monitor</span>
           <label class="toggle"><input type="checkbox" id="toggle-sysmon-widget" checked /><span class="toggle-slider"></span></label>
         </div>
         <div class="settings-row">
-          <span class="settings-label">Volume</span>
+          <span class="settings-label" data-i18n="st.volume">Volume</span>
           <label class="toggle"><input type="checkbox" id="toggle-audio-widget" checked /><span class="toggle-slider"></span></label>
         </div>
         <div class="settings-row">
-          <span class="settings-label">Brightness</span>
+          <span class="settings-label" data-i18n="st.brightness">Brightness</span>
           <label class="toggle"><input type="checkbox" id="toggle-brightness-widget" checked /><span class="toggle-slider"></span></label>
         </div>
       </div>
 
       <div class="settings-section">
-        <div class="settings-section-title">System</div>
+        <div class="settings-section-title" data-i18n="st.system">System</div>
         <div class="settings-row">
-          <span class="settings-label">Clock format</span>
+          <span class="settings-label" data-i18n="st.clockFormat">Clock format</span>
           <div class="settings-seg" id="seg-clock">
             <button data-value="24" class="active">24h</button>
             <button data-value="12">12h</button>
           </div>
         </div>
         <div class="settings-row">
-          <span class="settings-label">Pie hub clock</span>
+          <span class="settings-label" data-i18n="st.pieClock">Pie hub clock</span>
           <label class="toggle"><input type="checkbox" id="toggle-pie-clock" checked /><span class="toggle-slider"></span></label>
         </div>
       </div>
 
       <div class="settings-section">
-        <div class="settings-section-title">Maintenance</div>
+        <div class="settings-section-title" data-i18n="st.maintenance">Maintenance</div>
         <div class="settings-row">
-          <span class="settings-label">Reset config (restarts the app clean)</span>
-          <button class="mt-exit" id="mt-reset" style="margin:0;padding:6px 14px;" title="Delete all config files and restart">Reset</button>
+          <span class="settings-label" data-i18n="st.resetConfig">Reset config (restarts the app clean)</span>
+          <button class="mt-exit" id="mt-reset" style="margin:0;padding:6px 14px;" data-i18n-title="st.resetTitle" data-i18n="st.reset" title="Delete all config files and restart">Reset</button>
         </div>
         <div class="settings-row">
-          <span class="settings-label">Clear icon cache</span>
-          <button class="mt-exit" id="btn-clear-icons" style="margin:0;padding:6px 14px;" title="Drop cached file icons (they are re-extracted on demand)">Clear</button>
+          <span class="settings-label" data-i18n="st.clearIconCache">Clear icon cache</span>
+          <button class="mt-exit" id="btn-clear-icons" style="margin:0;padding:6px 14px;" data-i18n-title="st.clearTitle" data-i18n="st.clear" title="Drop cached file icons (they are re-extracted on demand)">Clear</button>
         </div>
       </div>
 
-      <button class="mt-exit" id="mt-exit" title="Restore the native Windows shell and exit">Exit Hush_UI</button>
+      <button class="mt-exit" id="mt-exit" data-i18n-title="st.exitTitle" data-i18n="st.exit" title="Restore the native Windows shell and exit">Exit Hush_UI</button>
     </div>
   </div>
 

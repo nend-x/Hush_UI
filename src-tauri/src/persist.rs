@@ -167,10 +167,16 @@ pub struct Settings {
     /// nothing on the system is modified. Default: off.
     #[serde(default)]
     pub dimmer_level: f64,
+    /// UI language for every window — "en" (default) or "ru". Dictionaries
+    /// live in src/shared/i18n.ts; unknown values fall back to English
+    /// frontend-side, so an old or hand-edited settings.json never breaks.
+    #[serde(default = "default_language")]
+    pub language: String,
 }
 
 fn default_tables_hold_ms() -> u64 { 80 }
 fn default_true() -> bool { true }
+fn default_language() -> String { "en".to_string() }
 
 pub fn load_settings() -> Settings {
     let path = data_dir().join("settings.json");
@@ -191,6 +197,7 @@ fn default_settings() -> Settings {
         clock_24h: true,
         pie_clock: true,
         show_desktop_grid: true,
+        language: "en".to_string(),
     }
 }
 

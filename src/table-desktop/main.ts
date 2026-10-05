@@ -9,6 +9,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { applyTheme, type ThemePayload } from "../shared/theme";
+import { initI18n, t } from "../shared/i18n";
 
 interface LauncherItem {
   id: string;
@@ -226,7 +227,7 @@ function render() {
     if (!emptyEl) {
       emptyEl = document.createElement("div");
       emptyEl.className = "td-empty";
-      emptyEl.textContent = "Desktop folder is empty";
+      emptyEl.textContent = t("dk.empty");
     }
     if (!emptyEl.isConnected) grid.appendChild(emptyEl);
   } else if (emptyEl?.isConnected) {
@@ -252,7 +253,7 @@ function showItemContextMenu(x: number, y: number, item: LauncherItem, tile: HTM
 
   const open = document.createElement("div");
   open.className = "context-menu-item";
-  open.textContent = "Open";
+  open.textContent = t("dk.open");
   open.addEventListener("click", () => {
     menu.remove();
     launchWithSpin(item, tile);
@@ -263,7 +264,7 @@ function showItemContextMenu(x: number, y: number, item: LauncherItem, tile: HTM
   // (pin order), everything else keeps the deterministic sort.
   const pin = document.createElement("div");
   pin.className = "context-menu-item";
-  pin.textContent = item.pinned ? "Unpin" : "Pin to top";
+  pin.textContent = item.pinned ? t("dk.unpin") : t("dk.pin");
   pin.addEventListener("click", () => {
     menu.remove();
     invoke("set_desktop_item_pinned", { itemId: item.id, pinned: !item.pinned });
@@ -276,7 +277,7 @@ function showItemContextMenu(x: number, y: number, item: LauncherItem, tile: HTM
 
   const rename = document.createElement("div");
   rename.className = "context-menu-item";
-  rename.textContent = "Rename";
+  rename.textContent = t("dk.rename");
   rename.addEventListener("click", () => {
     menu.remove();
     showRenameDialog(item);
@@ -285,7 +286,7 @@ function showItemContextMenu(x: number, y: number, item: LauncherItem, tile: HTM
 
   const del = document.createElement("div");
   del.className = "context-menu-item danger";
-  del.textContent = "Delete";
+  del.textContent = t("dk.delete");
   del.addEventListener("click", () => {
     menu.remove();
     invoke("delete_desktop_item", { itemId: item.id });
@@ -306,27 +307,27 @@ function showBackgroundContextMenu(x: number, y: number) {
 
   const newItem = document.createElement("div");
   newItem.className = "context-menu-item";
-  newItem.innerHTML = `<span>New</span><span class="context-menu-submenu-arrow">▸</span>`;
+  newItem.innerHTML = `<span>${t("dk.new")}</span><span class="context-menu-submenu-arrow">▸</span>`;
 
   const submenu = document.createElement("div");
   submenu.className = "context-menu-submenu";
 
   const folderItem = document.createElement("div");
   folderItem.className = "context-menu-item";
-  folderItem.textContent = "Folder";
+  folderItem.textContent = t("dk.folder");
   folderItem.addEventListener("click", () => {
     menu.remove();
-    showDialog("New folder", "", "Folder name", (name) => {
+    showDialog(t("dk.newFolder"), "", t("dk.folderName"), (name) => {
       invoke("create_desktop_item", { name, isFolder: true });
     });
   });
 
   const fileItem = document.createElement("div");
   fileItem.className = "context-menu-item";
-  fileItem.textContent = "File";
+  fileItem.textContent = t("dk.file");
   fileItem.addEventListener("click", () => {
     menu.remove();
-    showDialog("New file", "", "name.extension", (name) => {
+    showDialog(t("dk.newFile"), "", t("dk.extPh"), (name) => {
       invoke("create_desktop_item", { name, isFolder: false });
     });
   });
@@ -342,7 +343,7 @@ function showBackgroundContextMenu(x: number, y: number) {
 
   const refreshItem = document.createElement("div");
   refreshItem.className = "context-menu-item";
-  refreshItem.textContent = "Refresh";
+  refreshItem.textContent = t("dk.refresh");
   refreshItem.addEventListener("click", () => {
     menu.remove();
     invoke("refresh_desktop");
@@ -367,7 +368,7 @@ document.addEventListener("mousedown", (e) => {
 
 // ===== Rename dialog (same as the launcher's modal) =====
 function showRenameDialog(item: LauncherItem) {
-  showDialog("Rename", item.name, "New name", (name) => {
+  showDialog(t("dk.renameTitle"), item.name, t("dk.newName"), (name) => {
     invoke("rename_desktop_item", { itemId: item.id, newName: name });
   });
 }
@@ -401,11 +402,11 @@ function showDialog(
 
   const cancel = document.createElement("button");
   cancel.className = "modal-btn";
-  cancel.textContent = "Cancel";
+  cancel.textContent = t("dk.cancel");
 
   const confirm = document.createElement("button");
   confirm.className = "modal-btn primary";
-  confirm.textContent = "OK";
+  confirm.textContent = t("dk.ok");
 
   actions.appendChild(cancel);
   actions.appendChild(confirm);
@@ -444,6 +445,7 @@ function showDialog(
 
 // ===== Init =====
 (async function init() {
+  await initI18n();
   try {
     const theme = await invoke<ThemePayload | null>("get_active_theme");
     if (theme) applyTheme(theme);

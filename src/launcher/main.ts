@@ -5,6 +5,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, emit } from "@tauri-apps/api/event";
 import { initNotesWidget } from "../shared/notes-widget";
+import { initI18n, t } from "../shared/i18n";
 
 interface LauncherItem {
   id: string;
@@ -157,7 +158,7 @@ function renderClipboard() {
     const el = document.createElement("div");
     el.className = "clipboard-item";
     el.textContent = item.length > 40 ? item.substring(0, 40) + "…" : item;
-    el.title = item.startsWith("data:image/") ? "Screenshot (click to re-copy)" : item;
+    el.title = item.startsWith("data:image/") ? t("ln.screenshot") : item;
     el.addEventListener("click", () => {
       // Image items go back to the clipboard as a REAL image, not text
       if (item.startsWith("data:image/")) {
@@ -172,7 +173,7 @@ function renderClipboard() {
     const empty = document.createElement("div");
     empty.className = "clipboard-item";
     empty.style.color = "var(--sand-dim)";
-    empty.textContent = "No history";
+    empty.textContent = t("ln.noHistory");
     clipboardList.appendChild(empty);
   }
 }
@@ -939,7 +940,7 @@ function renderSpotlightResults() {
       grid.classList.add("hidden");
       const empty = document.createElement("div");
       empty.style.cssText = "color:var(--sand-dim);font-size:12px;padding:24px;text-align:center;";
-      empty.textContent = "Nothing found";
+      empty.textContent = t("ln.nothingFound");
       spotlightResultsEl.appendChild(empty);
       spotlightResultsEl.classList.remove("hidden");
     }
@@ -1141,7 +1142,7 @@ async function populateAppsWidget() {
   if (windows.length === 0) {
     const empty = document.createElement("div");
     empty.className = "apps-empty";
-    empty.textContent = "No open windows";
+    empty.textContent = t("ln.noWindows");
     appsBody.appendChild(empty);
     return;
   }
@@ -1241,14 +1242,14 @@ function showBackgroundContextMenu(x: number, y: number) {
 
   const newItem = document.createElement("div");
   newItem.className = "context-menu-item";
-  newItem.innerHTML = `<span>New</span><span class="context-menu-submenu-arrow">▸</span>`;
+  newItem.innerHTML = `<span>${t("ln.new")}</span><span class="context-menu-submenu-arrow">▸</span>`;
 
   const submenu = document.createElement("div");
   submenu.className = "context-menu-submenu";
 
   const folderItem = document.createElement("div");
   folderItem.className = "context-menu-item";
-  folderItem.textContent = "Folder";
+  folderItem.textContent = t("ln.folder");
   folderItem.addEventListener("click", () => {
     menu.remove();
     showNewFolderDialog();
@@ -1256,7 +1257,7 @@ function showBackgroundContextMenu(x: number, y: number) {
 
   const fileItem = document.createElement("div");
   fileItem.className = "context-menu-item";
-  fileItem.textContent = "File";
+  fileItem.textContent = t("ln.file");
   fileItem.addEventListener("click", () => {
     menu.remove();
     showNewFileDialog();
@@ -1273,7 +1274,7 @@ function showBackgroundContextMenu(x: number, y: number) {
 
   const refresh = document.createElement("div");
   refresh.className = "context-menu-item";
-  refresh.textContent = "Refresh";
+  refresh.textContent = t("ln.refresh");
   refresh.addEventListener("click", () => {
     menu.remove();
     invoke("refresh_desktop");
@@ -1289,13 +1290,13 @@ function showBackgroundContextMenu(x: number, y: number) {
 
 // ===== Dialogs =====
 function showNewFolderDialog() {
-  showDialog("New folder", "", "Folder name", (name) => {
+  showDialog(t("ln.newFolder"), "", t("ln.folderName"), (name) => {
     invoke("create_desktop_item", { name, isFolder: true });
   });
 }
 
 function showNewFileDialog() {
-  showDialog("New file", "", "name.extension", (name) => {
+  showDialog(t("ln.newFile"), "", t("ln.extPh"), (name) => {
     invoke("create_desktop_item", { name, isFolder: false });
   });
 }
@@ -1330,11 +1331,11 @@ function showDialog(
 
   const cancel = document.createElement("button");
   cancel.className = "modal-btn";
-  cancel.textContent = "Cancel";
+  cancel.textContent = t("ln.cancel");
 
   const confirm = document.createElement("button");
   confirm.className = "modal-btn primary";
-  confirm.textContent = "OK";
+  confirm.textContent = t("ln.ok");
 
   actions.appendChild(cancel);
   actions.appendChild(confirm);
@@ -1375,6 +1376,7 @@ function showDialog(
 
 // ===== Init =====
 async function init() {
+  await initI18n();
   try {
     allItems = await invoke<LauncherItem[]>("get_desktop_items");
     applyFilter();

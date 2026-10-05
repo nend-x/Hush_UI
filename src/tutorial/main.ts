@@ -15,6 +15,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { applyTheme, type ThemePayload } from "../shared/theme";
+import { initI18n, t } from "../shared/i18n";
 
 // ===== Demo geometry (same wedge math as the real pie picker) ============
 const SLICE_ORDER = ["hushlight", "desktop", "taskbar", "widgets", "settings"];
@@ -183,6 +184,7 @@ btn.addEventListener("click", () => {
 
 // Apply the active theme at load so the demo matches the current look.
 (async function init() {
+  await initI18n();
   try {
     const theme = await invoke<ThemePayload | null>("get_active_theme");
     if (theme) applyTheme(theme);

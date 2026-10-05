@@ -8,6 +8,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { applyTheme, type ThemePayload } from "../shared/theme";
+import { initI18n, t } from "../shared/i18n";
 
 interface SearchResult {
   id: string;
@@ -148,7 +149,7 @@ function renderResults() {
   if (results.length === 0) {
     const empty = document.createElement("div");
     empty.className = "fl-empty";
-    empty.textContent = "Nothing found";
+    empty.textContent = t("hl.nothingFound");
     resultsEl.appendChild(empty);
     return;
   }
@@ -279,6 +280,7 @@ getCurrentWindow().onFocusChanged(({ payload: focused }) => {
 
 // ===== Init =====
 (async function init() {
+  await initI18n();
   try {
     const theme = await invoke<ThemePayload | null>("get_active_theme");
     if (theme) applyTheme(theme);

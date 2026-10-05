@@ -7,6 +7,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { applyTheme, type ThemePayload } from "../shared/theme";
+import { initI18n, t } from "../shared/i18n";
 
 interface ShowPayload {
   x: number;
@@ -285,6 +286,7 @@ listen<HidePayload>("tables://hide", (e) => {
 // Apply the active theme + recolor state at startup (the picker loads
 // hidden; by the time it's first shown the vars are already set).
 (async function init() {
+  await initI18n();
   try {
     const theme = await invoke<ThemePayload | null>("get_active_theme");
     if (theme) applyTheme(theme);
