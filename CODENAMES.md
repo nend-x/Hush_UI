@@ -30,17 +30,20 @@ exe filename is unchanged.
 | titan20 | v0.4.2 | tag only — release superseded by myth21 |
 | myth21 | v0.4.3 | note windows off the main thread |
 | milk22 | — | tag only, points at main HEAD (no release yet) |
-| charley23 | v0.4.4 | current latest — frameless windows (no DWM ghost border), notes widget fits content |
+| charley23 | v0.4.4 | frameless windows (no DWM ghost border), notes widget fits content |
+| corduroy24 | v0.4.5 | current latest — localization support, Russian UI language, language picker in Settings |
 
 ## Convention for future releases
 
-- Numbering continues from the last tag: next release is `oracle24`, then
-  `echo25`, `atlas26`, ... Name pool: `oracle`, `echo`, `atlas`, `rune`,
-  `fable`, `legend`, `saga`, `omen`, `relic`, `veil`.
+- Numbering continues from the last tag: next release is `echo25`, then
+  `atlas26`, ... Name pool: `oracle`, `echo`, `atlas`, `rune`,
+  `fable`, `legend`, `saga`, `omen`, `relic`, `veil`. (`overdrive24` was
+  burned on a rolled-back release; `corduroy24` reused the number.)
 - Keep semver in the manifests and the `Hush_UI-x.y.z-portable.exe` asset name;
   the codename+number goes in the tag, release title, and this table.
 - After publishing, mark the new release as latest (or confirm GitHub picked it —
   with non-semver tags the automatic latest pick can be alphabetical, not
   chronological; PATCH the release with `{"make_latest": "true"}` if needed).
 - Theme so far: tropical fruits (1-6) -> dragonfruit -> mythological beasts
-  (7-21) -> milk. The pool continues the mystical one-word theme.
+  (7-21) -> milk -> fabric/texture names starting with corduroy. The pool
+  continues one-word material-ish names.
