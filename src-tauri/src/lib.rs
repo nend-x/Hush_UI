@@ -2557,14 +2557,47 @@ fn execute_run_admin(command: String) {
     log::info!("execute_run_admin: {}", command);
     #[cfg(windows)]
     {
-        // Use ShellExecuteW with verb "runas" to elevate
+        // Hush internals and URI launches have no "runas" association — the
+        // elevation verb only applies to real executable targets. Falling
+        // back to the normal path keeps a Shift-press from silently no-op'ing
+        // on those results (reboot/shutdown/screensaver just run; Settings
+        // pages and shell: folders just open).
+        if command.starts_with("hush:")
+            || command.starts_with("ms-settings:")
+            || command.starts_with("shell:")
+        {
+            if let Err(e) = win32::shell::shell_execute(&command) {
+                log::error!("execute_run_admin: non-elevatable '{command}' fallback failed: {e}");
+            }
+            return;
+        }
+
+        // Elevation needs the right thread conditions. Tauri runs commands on
+        // pooled worker threads that have NO COM apartment and NO message
+        // pump — the plain ShellExecuteW("runas") that used to live here
+        // failed silently in exactly that environment (no UAC, no launch,
+        // the error swallowed by `let _ =`). The shell docs are explicit:
+        // COM must be initialized before ShellExecuteEx, and
+        // SEE_MASK_NOASYNC must be passed when the calling thread has no
+        // message loop (it would otherwise wait on a conversation that can
+        // never complete). The startup elevation path only ever worked
+        // because run() executes on the main thread, which has both.
         use std::ffi::OsStr;
         use std::os::windows::ffi::OsStrExt;
         use windows::core::PCWSTR;
-        use windows::Win32::UI::Shell::ShellExecuteW;
+        use windows::Win32::System::Com::{CoInitializeEx, COINIT_APARTMENTTHREADED};
+        use windows::Win32::UI::Shell::{ShellExecuteExW, SEE_MASK_NOASYNC, SHELLEXECUTEINFOW};
         use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 
-        let wide_path: Vec<u16> = OsStr::new(&command)
+        unsafe {
+            // STA apartment for the shell call. S_OK / S_FALSE (already up)
+            // are both fine; RPC_E_CHANGED_MODE means this pool thread
+            // already initialized COM in another mode — usable either way,
+            // so the result is intentionally ignored.
+            let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+        }
+
+        let wide_file: Vec<u16> = OsStr::new(&command)
             .encode_wide()
             .chain(std::iter::once(0))
             .collect();
@@ -2573,16 +2606,22 @@ fn execute_run_admin(command: String) {
             .chain(std::iter::once(0))
             .collect();
 
-        let _ = unsafe {
-            ShellExecuteW(
-                None,
-                PCWSTR(verb.as_ptr()),
-                PCWSTR(wide_path.as_ptr()),
-                PCWSTR::null(),
-                PCWSTR::null(),
-                SW_SHOWNORMAL,
-            )
+        let mut sei = SHELLEXECUTEINFOW {
+            cbSize: std::mem::size_of::<SHELLEXECUTEINFOW>() as u32,
+            fMask: SEE_MASK_NOASYNC,
+            lpVerb: PCWSTR(verb.as_ptr()),
+            lpFile: PCWSTR(wide_file.as_ptr()),
+            nShow: SW_SHOWNORMAL.0,
+            ..Default::default()
         };
+
+        // Synchronous (NOASYNC): returns after the elevation hand-off. The
+        // crate maps "FALSE + GetLastError" into Err, so a declined UAC
+        // (ERROR_CANCELLED) and hard failures both land in the log instead
+        // of vanishing.
+        if let Err(e) = unsafe { ShellExecuteExW(&mut sei) } {
+            log::error!("execute_run_admin: ShellExecuteExW('runas') failed for '{command}': {e}");
+        }
     }
 }
 
@@ -2650,14 +2689,6 @@ fn search_programs(query: String) -> Vec<SearchResult> {
         // 1. Built-in system shortcuts (control panel, add/remove, etc.)
         let system_shortcuts = [
             ("control panel", "control.exe"),
-            ("add or remove programs", "appwiz.cpl"),
-            ("programs and features", "appwiz.cpl"),
-            ("uninstall a program", "appwiz.cpl"),
-            ("system properties", "sysdm.cpl"),
-            ("power options", "powercfg.cpl"),
-            ("mouse properties", "main.cpl"),
-            ("sound", "mmsys.cpl"),
-            ("audio devices", "mmsys.cpl"),
             ("device manager", "devmgmt.msc"),
             ("task manager", "taskmgr.exe"),
             ("registry editor", "regedit.exe"),
@@ -2668,6 +2699,7 @@ fn search_programs(query: String) -> Vec<SearchResult> {
             ("local security policy", "secpol.msc"),
             ("group policy", "gpedit.msc"),
             ("command prompt", "cmd.exe"),
+            ("cmd", "cmd.exe"),
             ("powershell", "powershell.exe"),
             ("windows terminal", "wt.exe"),
             ("settings", "ms-settings:"),
@@ -2675,14 +2707,9 @@ fn search_programs(query: String) -> Vec<SearchResult> {
             ("network settings", "ms-settings:network"),
             ("bluetooth", "ms-settings:bluetooth"),
             ("apps", "ms-settings:appsfeatures"),
-            ("accounts", "ms-settings:accounts"),
             ("personalization", "ms-settings:personalization"),
             ("windows update", "ms-settings:windowsupdate"),
-            ("date and time", "timedate.cpl"),
-            ("internet options", "inetcpl.cpl"),
-            ("user accounts", "netplwiz"),
             ("system information", "msinfo32.exe"),
-            ("file explorer options", "control.exe folders"),
             ("file explorer", "explorer.exe"),
             ("recycle bin", "explorer.exe shell:RecycleBinFolder"),
             ("this pc", "explorer.exe"),
@@ -2695,6 +2722,7 @@ fn search_programs(query: String) -> Vec<SearchResult> {
             ("on-screen keyboard", "osk.exe"),
             // Hush_UI commands
             ("reboot", "hush:reboot"),
+            ("restart", "hush:reboot"),
             ("shutdown", "hush:shutdown"),
             ("add hush to startup", "hush:addstartup"),
             ("remove hush from startup", "hush:removestartup"),
