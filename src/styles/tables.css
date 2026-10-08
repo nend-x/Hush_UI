@@ -586,6 +586,14 @@
   gap: 10px;
   padding: 10px 12px 12px;
   overflow-y: auto;
+  /* Reserve the scrollbar gutter even when no scrollbar is showing.
+     Without it the 4px thumb sliding in/out (dropdown toggles, the
+     animated window resize below, the monitor-ceiling fallback) reflows
+     every widget by those pixels, which can rewrap text and re-trigger
+     the height measurement mid-motion. With it the content width is
+     constant in every state — no couple-pixel wobble, and the resize
+     animation can't oscillate against its own measurement. */
+  scrollbar-gutter: stable;
 }
 .mt-widgets::-webkit-scrollbar { width: 4px; }
 .mt-widgets::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 2px; }
