@@ -592,6 +592,10 @@
 
 .mt-widgets .widget {
   position: static;
+  /* Natural heights only: the window is sized to fit the stacked content
+     (resize_table_window), so flex-shrink must never silently squeeze a
+     widget — that would desync the measurement and hide content. */
+  flex-shrink: 0;
   /* Neutralize EVERY launcher-canvas leftover (the launcher positions
      widgets absolutely across its own surface: .notes-widget left/top,
      .audio-widget left:50%+translateX, …). Without this any widget that
@@ -613,7 +617,11 @@
    column past the viewport, creating a scrollbar even when everything would
    fit. The list's own padding (4/12/12) keeps the buttons off the edges. */
 .mt-widgets .notes-widget { min-height: 0; height: auto; }
-.mt-widgets .notes-list { max-height: 150px; }
+/* Uncapped: the window now grows to fit the content, so the note buttons
+   must never scroll (the launcher's own panel keeps its cap). A pathological
+   note count still can't run away — the backend clamps the window to the
+   monitor, and the column scrollbar returns as the fallback. */
+.mt-widgets .notes-list { max-height: none; }
 .mt-widgets .audio-widget {
   position: static;
   transform: none;
