@@ -31,14 +31,16 @@ exe filename is unchanged.
 | myth21 | v0.4.3 | note windows off the main thread |
 | milk22 | — | tag only, points at main HEAD (no release yet) |
 | charley23 | v0.4.4 | frameless windows (no DWM ghost border), notes widget fits content |
-| corduroy24 | v0.4.5 | current latest — localization support, Russian UI language, language picker in Settings |
+| corduroy24 | v0.4.5 | localization support, Russian UI language, language picker in Settings |
+| milk25 | v0.4.5 | current latest — run-table cleanup + run-as-admin fix, per-app volume mixer (animated dropdown), adaptive widgets table with smooth auto-resize; no version bump (user-built exe from the 0.4.5 source) |
 
 ## Convention for future releases
 
-- Numbering continues from the last tag: next release is `echo25`, then
-  `atlas26`, ... Name pool: `oracle`, `echo`, `atlas`, `rune`,
+- Numbering continues from the last tag: next release is `atlas26`, then
+  `rune27`, ... Name pool: `oracle`, `echo`, `atlas`, `rune`,
   `fable`, `legend`, `saga`, `omen`, `relic`, `veil`. (`overdrive24` was
-  burned on a rolled-back release; `corduroy24` reused the number.)
+  burned on a rolled-back release; `corduroy24` reused the number. `echo25`
+  was skipped — its source payload shipped as the user-chosen `milk25`.)
 - Keep semver in the manifests and the `Hush_UI-x.y.z-portable.exe` asset name;
   the codename+number goes in the tag, release title, and this table.
 - After publishing, mark the new release as latest (or confirm GitHub picked it —
