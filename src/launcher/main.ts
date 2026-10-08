@@ -5,6 +5,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, emit } from "@tauri-apps/api/event";
 import { initNotesWidget } from "../shared/notes-widget";
+import { initAudioApps } from "../shared/audio-apps";
 import { initI18n, t } from "../shared/i18n";
 
 interface LauncherItem {
@@ -1395,6 +1396,7 @@ async function init() {
   loadClipboardWidget();
   void initNotesWidget();
   loadAudioWidget();
+  initAudioApps("ln");
   // 0.3.0 idle fix: sysmon polling now starts/stops with the window
   // (launcher://force-shown / force-hidden) instead of running forever.
   updateSysmon();

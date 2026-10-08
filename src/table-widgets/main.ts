@@ -9,6 +9,7 @@ import { emit, listen } from "@tauri-apps/api/event";
 import { applyTheme, type ThemePayload } from "../shared/theme";
 import { initI18n, t } from "../shared/i18n";
 import { initNotesWidget } from "../shared/notes-widget";
+import { initAudioApps } from "../shared/audio-apps";
 
 const root = document.getElementById("mt-root")!;
 const greeting = document.getElementById("mt-greeting")!;
@@ -293,6 +294,7 @@ listen<boolean>("icon-recolor://changed", (e) => {
   await applyVisibility();
   await renderGreeting();
   await initNotesWidget();
+  initAudioApps("wg");
   await loadAudio();
   await loadBrightness();
   renderClipboard();
