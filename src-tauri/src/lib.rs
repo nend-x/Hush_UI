@@ -1821,16 +1821,203 @@ struct AppVolume {
     pid: u32,
     name: String,
     volume: f32,
+    icon: Option<String>,
+}
+
+/// Friendly short name + full image path for a pid ("chrome", "spotify").
+/// None when the process already exited or refuses the limited query.
+#[cfg(windows)]
+fn app_volume_process_info(pid: u32) -> Option<(String, String)> {
+    use windows::core::PWSTR;
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::System::Threading::{
+        OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
+        PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+    unsafe {
+        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
+        let mut buf = [0u16; 1024];
+        let mut len = buf.len() as u32;
+        let res = QueryFullProcessImageNameW(
+            handle,
+            PROCESS_NAME_WIN32,
+            PWSTR(buf.as_mut_ptr()),
+            &mut len,
+        );
+        let _ = CloseHandle(handle);
+        res.ok()?;
+        let full = String::from_utf16_lossy(&buf[..len as usize]);
+        let stem = std::path::Path::new(&full)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("app")
+            .to_string();
+        Some((stem, full))
+    }
+}
+
+// Icon data-URLs cost a shell round-trip each (win32::icon), and the widget
+// refreshes every couple of seconds — cache them by full image path so a
+// session list repaint never re-extracts.
+#[cfg(windows)]
+static APP_VOLUME_ICON_CACHE: std::sync::Mutex<
+    Option<std::collections::HashMap<String, Option<String>>>,
+> = std::sync::Mutex::new(None);
+
+#[cfg(windows)]
+fn app_volume_icon(exe_path: &str) -> Option<String> {
+    let mut guard = APP_VOLUME_ICON_CACHE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let map = guard.get_or_insert_with(std::collections::HashMap::new);
+    if let Some(hit) = map.get(exe_path) {
+        return hit.clone();
+    }
+    let icon = crate::win32::icon::extract_icon_for_path(exe_path);
+    map.insert(exe_path.to_string(), icon.clone());
+    icon
+}
+
+// Shared WASAPI plumbing for both app-volume commands: COM init (the
+// Tauri command threads have no apartment), default render device, then
+// the session enumerator. IAudioSessionManager2 owns GetSessionEnumerator
+// in the windows crate (COM inheritance is not flattened onto the parent)
+// and hands out the sessions of the default render device — exactly what
+// the master slider above already targets.
+#[cfg(windows)]
+fn with_app_sessions<T>(
+    f: impl FnOnce(&windows::Win32::Media::Audio::IAudioSessionEnumerator) -> Option<T>,
+) -> Option<T> {
+    use windows::Win32::Media::Audio::{
+        eConsole, eRender, IAudioSessionEnumerator, IAudioSessionManager2, IMMDeviceEnumerator,
+        MMDeviceEnumerator,
+    };
+    use windows::Win32::System::Com::{
+        CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_ALL, COINIT_MULTITHREADED,
+    };
+
+    unsafe {
+        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+        let mut result = None;
+        // Labeled block instead of an inner closure — closure bodies do not
+        // inherit the enclosing unsafe context, and every early exit still
+        // has to reach the CoUninitialize below.
+        'setup: {
+            let enumerator: IMMDeviceEnumerator =
+                match CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL) {
+                    Ok(e) => e,
+                    Err(_) => break 'setup,
+                };
+            let device = match enumerator.GetDefaultAudioEndpoint(eRender, eConsole) {
+                Ok(d) => d,
+                Err(_) => break 'setup,
+            };
+            let manager: IAudioSessionManager2 = match device.Activate(CLSCTX_ALL, None) {
+                Ok(m) => m,
+                Err(_) => break 'setup,
+            };
+            let sessions: IAudioSessionEnumerator = match manager.GetSessionEnumerator() {
+                Ok(s) => s,
+                Err(_) => break 'setup,
+            };
+            result = f(&sessions);
+        }
+        CoUninitialize();
+        result
+    }
+}
+
+#[cfg(windows)]
+fn get_app_volumes_impl() -> Vec<AppVolume> {
+    use windows::core::Interface;
+    use windows::Win32::Media::Audio::{IAudioSessionControl2, ISimpleAudioVolume};
+
+    with_app_sessions(|sessions| unsafe {
+        let count = sessions.GetCount().unwrap_or(0);
+        let mut out: Vec<AppVolume> = Vec::new();
+        let mut seen: Vec<u32> = Vec::new();
+        for i in 0..count {
+            let ctrl = match sessions.GetSession(i) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+            let ctrl2 = match ctrl.cast::<IAudioSessionControl2>() {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+            let pid = match ctrl2.GetProcessId() {
+                Ok(p) => p,
+                Err(_) => continue,
+            };
+            // pid 0 is the system-sounds session — not a mixer row. One row
+            // per process even when an app runs several sessions (the
+            // setter below applies to every session of the pid anyway).
+            if pid == 0 || seen.contains(&pid) {
+                continue;
+            }
+            let simple = match ctrl.cast::<ISimpleAudioVolume>() {
+                Ok(s) => s,
+                Err(_) => continue,
+            };
+            let volume = simple.GetMasterVolume().unwrap_or(1.0);
+            let Some((name, exe)) = app_volume_process_info(pid) else {
+                continue;
+            };
+            seen.push(pid);
+            out.push(AppVolume {
+                pid,
+                name,
+                volume,
+                icon: app_volume_icon(&exe),
+            });
+        }
+        Some(out)
+        })
+    .unwrap_or_default()
+}
+
+#[cfg(windows)]
+fn set_app_volume_impl(pid: u32, volume: f32) {
+    use windows::core::Interface;
+    use windows::Win32::Media::Audio::ISimpleAudioVolume;
+
+    with_app_sessions(|sessions| unsafe {
+        let count = sessions.GetCount().unwrap_or(0);
+        for i in 0..count {
+            let Ok(ctrl) = sessions.GetSession(i) else { continue };
+            let Ok(simple) = ctrl.cast::<ISimpleAudioVolume>() else {
+                continue;
+            };
+            // Match on the session's owning process — an app with multiple
+            // streams gets all of them moved together.
+            let Ok(ctrl2) = ctrl.cast::<windows::Win32::Media::Audio::IAudioSessionControl2>()
+            else {
+                continue;
+            };
+            if ctrl2.GetProcessId() != Ok(pid) {
+                continue;
+            }
+            let _ = simple.SetMasterVolume(
+                volume.clamp(0.0, 1.0),
+                &windows::core::GUID::zeroed(),
+            );
+        }
+        Some(())
+        });
 }
 
 #[tauri::command]
 fn get_app_volumes() -> Vec<AppVolume> {
-    Vec::new()
+    #[cfg(windows)]
+    { return get_app_volumes_impl(); }
+    #[cfg(not(windows))]
+    { Vec::new() }
 }
 
 #[tauri::command]
-fn set_app_volume(_pid: u32, _volume: f32) {
-    // Placeholder — per-app volume needs ISimpleAudioVolume
+fn set_app_volume(pid: u32, volume: f32) {
+    #[cfg(windows)]
+    { set_app_volume_impl(pid, volume); }
 }
 
 // ===== Widget positions =====
