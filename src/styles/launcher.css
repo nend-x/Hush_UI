@@ -985,6 +985,67 @@ html.background-ready, html.background-ready body {
   transform: rotate(180deg);
 }
 
+/* Dropdown panel (toolbar + list). The [hidden] override is load-bearing:
+   an author display rule beats the UA stylesheet's [hidden] { display:none },
+   so without this the first cut of the dropdown opened fine and then
+   refused to close. */
+.audio-apps-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.audio-apps-panel[hidden] {
+  display: none;
+}
+
+.audio-apps-toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.audio-apps-refresh {
+  display: flex;
+  align-items: center;
+  background: none;
+  border: none;
+  padding: 1px;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: color 120ms ease;
+}
+
+.audio-apps-refresh:hover {
+  color: var(--text-secondary);
+}
+
+.audio-apps-refresh svg {
+  width: 11px;
+  height: 11px;
+}
+
+.audio-apps-refresh.spinning svg {
+  animation: audio-apps-spin 0.6s ease;
+}
+
+@keyframes audio-apps-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Per-app icons follow the Icon Recoloring setting — same 3-layer tint
+   chain as the launcher icons. Works in both windows because each carries
+   .icon-recolor on an ancestor (launcher root / <html> in the tables). */
+.icon-recolor .audio-app-row img.audio-app-icon {
+  opacity: 0.85;
+  filter:
+    grayscale(1)
+    sepia(1)
+    hue-rotate(var(--icon-recolor-hue))
+    saturate(var(--icon-recolor-sat))
+    brightness(var(--icon-recolor-brightness));
+}
+
 .audio-apps-list {
   display: flex;
   flex-direction: column;

@@ -1930,7 +1930,9 @@ fn with_app_sessions<T>(
 #[cfg(windows)]
 fn get_app_volumes_impl() -> Vec<AppVolume> {
     use windows::core::Interface;
-    use windows::Win32::Media::Audio::{IAudioSessionControl2, ISimpleAudioVolume};
+    use windows::Win32::Media::Audio::{
+        AudioSessionStateActive, IAudioSessionControl2, ISimpleAudioVolume,
+    };
 
     with_app_sessions(|sessions| unsafe {
         let count = sessions.GetCount().unwrap_or(0);
@@ -1941,6 +1943,13 @@ fn get_app_volumes_impl() -> Vec<AppVolume> {
                 Ok(c) => c,
                 Err(_) => continue,
             };
+            // Only sessions actively rendering audio right now. Windows keeps
+            // Inactive sessions around after an app stops playing, and the
+            // widget used to show ghost rows for apps that had long gone
+            // silent — those drop out on the next tick with this filter.
+            if ctrl.GetState() != Ok(AudioSessionStateActive) {
+                continue;
+            }
             let ctrl2 = match ctrl.cast::<IAudioSessionControl2>() {
                 Ok(c) => c,
                 Err(_) => continue,

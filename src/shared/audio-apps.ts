@@ -9,6 +9,9 @@
 
    The list refreshes on a 2s loop ONLY while the dropdown is open — closed
    state costs zero IPC (same idle philosophy as the 0.3.0 polling fix).
+   The backend only reports sessions that are actively rendering audio, so
+   apps that went silent drop out of the list on the next tick (or on the
+   refresh button); the row diff removes their sliders automatically.
    ========================================================================= */
 
 import { invoke } from "@tauri-apps/api/core";
@@ -34,15 +37,22 @@ const pendingSets: Record<number, number> = {};
 export function initAudioApps(i18nPrefix: "wg" | "ln"): void {
   if (initialized) return;
   const toggle = document.getElementById("audio-apps-toggle");
+  const panel = document.getElementById("audio-apps-panel");
   const list = document.getElementById("audio-apps-list");
-  if (!toggle || !list) return;
+  if (!toggle || !list || !panel) return;
   initialized = true;
 
-  toggle.addEventListener("click", () => {
-    open = !open;
+  // Single source of truth for the expanded state. The first cut toggled
+  // the `hidden` attribute on the list, but .audio-apps-list's author CSS
+  // (display:flex) outranks the UA's [hidden] display:none — the dropdown
+  // opened fine and then refused to close. The panel wrapper carries the
+  // state now, with an explicit [hidden] override in launcher.css.
+  const setOpen = (next: boolean) => {
+    if (open === next) return;
+    open = next;
     toggle.classList.toggle("open", open);
     toggle.setAttribute("aria-expanded", String(open));
-    list.hidden = !open;
+    panel.hidden = !open;
     if (open) {
       void refresh(i18nPrefix);
       if (refreshTimer === null) {
@@ -52,6 +62,42 @@ export function initAudioApps(i18nPrefix: "wg" | "ln"): void {
       window.clearInterval(refreshTimer);
       refreshTimer = null;
     }
+  };
+
+  toggle.addEventListener("click", () => setOpen(!open));
+
+  // Click anywhere outside the audio widget closes the dropdown (capture
+  // phase so it wins over other windows' click handling).
+  document.addEventListener(
+    "pointerdown",
+    (e) => {
+      if (!open) return;
+      const widget = document.getElementById("audio-widget");
+      if (widget && e.target instanceof Node && widget.contains(e.target)) return;
+      setOpen(false);
+    },
+    true,
+  );
+
+  // Escape closes the dropdown first; only a second press reaches the
+  // widgets table's own Escape handler (which closes the whole table).
+  document.addEventListener(
+    "keydown",
+    (e) => {
+      if (!open || e.key !== "Escape") return;
+      e.stopPropagation();
+      setOpen(false);
+    },
+    true,
+  );
+
+  // Manual re-enumeration — instant, no waiting for the 2s loop.
+  const refreshBtn = document.getElementById("audio-apps-refresh");
+  refreshBtn?.addEventListener("click", () => {
+    refreshBtn.classList.remove("spinning");
+    void refreshBtn.offsetWidth; // restart the spin animation on rapid clicks
+    refreshBtn.classList.add("spinning");
+    void refresh(i18nPrefix);
   });
 
   // Language switch while an empty list is on screen: re-render the label.
