@@ -985,43 +985,67 @@ html.background-ready, html.background-ready body {
   transform: rotate(180deg);
 }
 
-/* Dropdown panel (toolbar + list). The [hidden] override is load-bearing:
-   an author display rule beats the UA stylesheet's [hidden] { display:none },
-   so without this the first cut of the dropdown opened fine and then
-   refused to close. */
+/* Dropdown panel (list + refresh). Open/close animates as a height
+   collapse (grid 0fr -> 1fr, the single .audio-apps-inner track) plus a
+   fade; `display` rides the transition with allow-discrete so the
+   [hidden] flip waits for the fade-out instead of cutting it off.
+   The [hidden] display override is still load-bearing — an author
+   display rule beats the UA stylesheet's [hidden] { display:none }.
+   Old engines: declarations they can't parse are dropped and the panel
+   falls back to instant show/hide. */
 .audio-apps-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition:
+    grid-template-rows 200ms ease,
+    opacity 160ms ease,
+    display 200ms linear;
+  transition-behavior: allow-discrete;
 }
 
 .audio-apps-panel[hidden] {
   display: none;
+  grid-template-rows: 0fr;
+  opacity: 0;
 }
 
-.audio-apps-toolbar {
+.audio-apps-inner {
   display: flex;
-  justify-content: flex-end;
+  flex-direction: column;
+  gap: 6px;
+  overflow: hidden;
+  min-height: 0;
 }
 
 .audio-apps-refresh {
+  align-self: center;
   display: flex;
   align-items: center;
-  background: none;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
   border: none;
-  padding: 1px;
+  border-radius: 50%;
+  background: rgba(var(--sand-rgb), 0.08);
   cursor: pointer;
   color: var(--text-muted);
-  transition: color 120ms ease;
+  transition:
+    color 120ms ease,
+    background 120ms ease,
+    transform 120ms var(--ease-spring);
 }
 
 .audio-apps-refresh:hover {
   color: var(--text-secondary);
+  background: rgba(var(--sand-rgb), 0.15);
+  transform: scale(1.08);
 }
 
 .audio-apps-refresh svg {
-  width: 11px;
-  height: 11px;
+  width: 14px;
+  height: 14px;
 }
 
 .audio-apps-refresh.spinning svg {
