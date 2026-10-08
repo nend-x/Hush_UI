@@ -96,7 +96,9 @@ listen<Record<string, boolean>>("widgets://visibility", (e) => {
 // (clipboard keeps its own 130px list cap and stays the one scrollable
 // widget). The frontend measures the natural content height and the
 // backend applies it via resize_table_window — so the table also stays
-// correct while the per-app volume dropdown is open or collapsed.
+// correct while the per-app volume dropdown is open or collapsed. The
+// height change itself doesn't snap: it's stepped through a rAF loop
+// with an ease-out curve, so growing/shrinking reads as one motion.
 const widgetsCol = document.querySelector<HTMLElement>(".mt-widgets")!;
 const mtHeaderEl = document.querySelector<HTMLElement>(".mt-header")!;
 
@@ -125,12 +127,53 @@ function fitWindowHeight() {
     const needed = Math.ceil(
       mtHeaderEl.offsetHeight + naturalColumnHeight() + 2 /* .mt-root borders */,
     );
-    void invoke("resize_table_window", {
-      name: "widgets",
-      width: window.innerWidth,
-      height: needed,
-    }).catch(() => {});
+    animateWindowHeight(needed);
   }, 80);
+}
+
+// ===== Smooth resize animation =====
+// An OS window can't CSS-transition its own bounds, so the resize is
+// stepped: one set_size per animation frame with an ease-out curve
+// (~14 frames over 240ms — same motion family as the dropdown's 200ms).
+// A fit that changes mid-flight (dropdown retoggle, clipboard churn,
+// visibility switches) re-anchors on the last height actually commanded,
+// so the motion continues from where the window really is instead of
+// snapping. The backend clamps to the monitor ceiling — clamped frames
+// simply don't move — and scrollbar-gutter: stable (tables.css) keeps
+// the content width constant through every state, so a sliding scrollbar
+// can't rewrap the widgets and re-trigger the measurement mid-motion.
+const RESIZE_ANIM_MS = 240;
+let lastSentH: number | null = null; // last height actually commanded
+let resizeRaf: number | null = null;
+
+function animateWindowHeight(targetH: number) {
+  if (resizeRaf !== null) {
+    cancelAnimationFrame(resizeRaf);
+    resizeRaf = null;
+  }
+  const from = lastSentH ?? Math.round(window.innerHeight);
+  lastSentH = from;
+  if (Math.abs(targetH - from) < 1) return;
+  const t0 = performance.now();
+  const easeOut = (t: number) => 1 - Math.pow(1 - t, 3);
+  const step = (now: number) => {
+    const t = Math.min(1, (now - t0) / RESIZE_ANIM_MS);
+    const h = Math.round(from + (targetH - from) * easeOut(t));
+    if (h !== lastSentH) {
+      lastSentH = h;
+      void invoke("resize_table_window", {
+        name: "widgets",
+        width: window.innerWidth,
+        height: h,
+      }).catch(() => {});
+    }
+    if (t < 1) {
+      resizeRaf = requestAnimationFrame(step);
+    } else {
+      resizeRaf = null;
+    }
+  };
+  resizeRaf = requestAnimationFrame(step);
 }
 
 // Anything that changes widget heights lands here: the dropdown's
