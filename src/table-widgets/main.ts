@@ -40,6 +40,7 @@ listen("table://widgets-shown", () => {
   // alive when hidden, so the old bare setIntervals kept waking the IPC
   // layer forever — the app burned CPU for data nobody could see.
   startPolling();
+  fitWindowHeight();
 });
 
 function close() {
@@ -87,6 +88,62 @@ listen<Record<string, boolean>>("widgets://visibility", (e) => {
     const el = document.getElementById(id);
     if (el) el.style.display = visible ? "" : "none";
   }
+  fitWindowHeight();
+});
+
+// ===== Adaptive window height =====
+// The window must fit every stacked widget without a column scrollbar
+// (clipboard keeps its own 130px list cap and stays the one scrollable
+// widget). The frontend measures the natural content height and the
+// backend applies it via resize_table_window — so the table also stays
+// correct while the per-app volume dropdown is open or collapsed.
+const widgetsCol = document.querySelector<HTMLElement>(".mt-widgets")!;
+const mtHeaderEl = document.querySelector<HTMLElement>(".mt-header")!;
+
+// Sum the column's children at their natural sizes. Deliberately NOT
+// scrollHeight: once the window is too big, scrollHeight clamps to the
+// client box and the window could never shrink back. Child heights
+// depend on content only (the width is fixed), so window resizes can't
+// re-trigger the observer — no feedback loop.
+function naturalColumnHeight(): number {
+  const kids = Array.from(widgetsCol.children) as HTMLElement[];
+  let sum = 0;
+  for (const k of kids) sum += k.offsetHeight; // display:none kids count 0
+  const cs = getComputedStyle(widgetsCol);
+  const gap = parseFloat(cs.rowGap) || 0;
+  sum += gap * Math.max(0, kids.length - 1);
+  sum += (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+  return sum;
+}
+
+let fitTimer: number | null = null;
+function fitWindowHeight() {
+  if (fitTimer !== null) window.clearTimeout(fitTimer);
+  fitTimer = window.setTimeout(() => {
+    fitTimer = null;
+    if (document.visibilityState !== "visible") return;
+    const needed = Math.ceil(
+      mtHeaderEl.offsetHeight + naturalColumnHeight() + 2 /* .mt-root borders */,
+    );
+    void invoke("resize_table_window", {
+      name: "widgets",
+      width: window.innerWidth,
+      height: needed,
+    }).catch(() => {});
+  }, 80);
+}
+
+// Anything that changes widget heights lands here: the dropdown's
+// open/close animation, clipboard items, note buttons, theme font
+// rewraps, i18n switches. The 80ms debounce rides out animation frames.
+const columnRO = new ResizeObserver(() => fitWindowHeight());
+for (const k of Array.from(widgetsCol.children)) columnRO.observe(k);
+
+// Belt and suspenders: if table://widgets-shown ever arrives before the
+// OS window is actually visible, the fit's visibility guard skips it —
+// refit the moment the window does become visible.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") fitWindowHeight();
 });
 
 // ===== Polling lifecycle (0.3.0 idle fix) =====

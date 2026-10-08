@@ -1010,6 +1010,18 @@ html.background-ready, html.background-ready body {
   opacity: 0;
 }
 
+/* Entry half of the animation: an element that was display:none has no
+   before-change style, so without a starting style its first rendered
+   frame already carries the final values and it snaps open (the close
+   half works because the panel stays rendered through allow-discrete).
+   @starting-style gives the reveal its 0fr/0 starting point. */
+@starting-style {
+  .audio-apps-panel:not([hidden]) {
+    grid-template-rows: 0fr;
+    opacity: 0;
+  }
+}
+
 .audio-apps-inner {
   display: flex;
   flex-direction: column;

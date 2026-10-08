@@ -533,6 +533,7 @@ pub fn run() {
             set_app_volume,
             save_widget_positions,
             load_widget_positions,
+            resize_table_window,
             save_widget_visibility,
             load_widget_visibility,
             save_icon_recolor,
@@ -2027,6 +2028,39 @@ fn get_app_volumes() -> Vec<AppVolume> {
 fn set_app_volume(pid: u32, volume: f32) {
     #[cfg(windows)]
     { set_app_volume_impl(pid, volume); }
+}
+
+// ===== Adaptive table window height =====
+// The widgets table measures its stacked content in the frontend and asks
+// for exactly that much height (width is kept) — every widget then fits
+// without the column scrollbar, whatever the per-app dropdown is doing.
+// The clipboard list keeps its own 130px cap, so it stays the one
+// intentionally scrollable widget. Programmatic set_size works fine on
+// resizable:false windows (the flag only blocks user resizing).
+#[tauri::command]
+fn resize_table_window(app: tauri::AppHandle, name: String, width: f64, height: f64) {
+    let label = match name.as_str() {
+        "widgets" => "table-widgets",
+        other => other,
+    };
+    let Some(win) = app.get_webview_window(label) else { return; };
+    // Ceiling: current monitor minus room to still grab the header,
+    // converted to logical px. Content taller than that keeps scrolling.
+    let max_h = win
+        .current_monitor()
+        .ok()
+        .flatten()
+        .and_then(|m| {
+            win.scale_factor()
+                .ok()
+                .map(|s| ((m.size().height as f64) - 80.0) / s)
+        })
+        .unwrap_or(900.0)
+        .max(240.0);
+    let _ = win.set_size(tauri::LogicalSize::new(
+        width.clamp(200.0, 1200.0),
+        height.clamp(200.0, max_h),
+    ));
 }
 
 // ===== Widget positions =====
