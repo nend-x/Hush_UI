@@ -486,13 +486,6 @@
 
 .brightness-slider::-webkit-slider-thumb:hover { transform: scale(1.3); }
 
-.brightness-hint {
-  font-family: var(--font-ui);
-  font-size: 10px;
-  line-height: 1.4;
-  color: var(--accent-terracotta);
-}
-
 .settings-slider-row {
   display: flex;
   align-items: center;
