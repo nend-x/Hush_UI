@@ -61,6 +61,11 @@
       <div class="widget brightness-widget" id="brightness-widget">
         <div class="widget-header" data-i18n="wg.brightness">Brightness</div>
         <div class="brightness-body">
+          <div class="brightness-row" id="native-row">
+            <span class="brightness-label" data-i18n="wg.native">Native</span>
+            <input type="range" class="brightness-slider" id="native-slider" min="0" max="100" value="100" />
+            <span class="brightness-val" id="native-val">100%</span>
+          </div>
           <div class="brightness-row">
             <span class="brightness-label" data-i18n="wg.dim">Dim</span>
             <input type="range" class="brightness-slider" id="brightness-slider" min="0" max="100" value="0" />

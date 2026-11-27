@@ -56,6 +56,9 @@ windows = { version = "0.61", features = [
   "Win32_Media_Audio",
   "Win32_Media_Audio_Endpoints",
   "Win32_System_Power",
+  "Win32_Devices_Display",
+  "Win32_System_Wmi",
+  "Win32_System_Rpc",
 ] }
 # Replaces the old flatwin.exe AutoHotkey helper. Installs a low-level keyboard
 # hook that suppresses the Start menu when the Win key is released alone, and
