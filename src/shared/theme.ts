@@ -17,6 +17,8 @@ export interface ThemePayload {
 export const THEME_ICON_RECOLOR: Record<string, { hue: string; sat: string; brightness: string }> = {
   // Neutral gray theme — recolor filter yields desaturated gray icons
   "material3-dark": { hue: "0deg", sat: "0.0", brightness: "0.95" },
+  // Breeze blue (#3DAEE9) — sepia base hue (~40deg) rotated up to ~203deg
+  "quickshell-dark": { hue: "165deg", sat: "1.5", brightness: "1.0" },
 };
 
 export function applyThemeColors(colors: Record<string, string>): void {
@@ -31,6 +33,9 @@ export function applyThemeColors(colors: Record<string, string>): void {
 /// load and live theme://changed events.
 export function applyTheme(theme: ThemePayload): void {
   applyThemeColors(theme.colors);
+  // Structural per-theme styling (radii, easing, hover behavior, fonts)
+  // keys off the theme name via CSS [data-theme] blocks in theme.css.
+  document.documentElement.dataset.theme = theme.name;
   const recolor = THEME_ICON_RECOLOR[theme.name];
   if (recolor) {
     const r = document.documentElement;
