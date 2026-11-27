@@ -11,6 +11,7 @@ pub mod winevent;
 pub mod hotkey;
 pub mod table_mouse;
 pub mod dimmer;
+pub mod native_brightness;
 pub mod tray;
 
 // Win-key tap-vs-combo handling lives in `hotkey.rs`. It installs a

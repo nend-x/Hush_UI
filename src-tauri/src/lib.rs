@@ -535,6 +535,8 @@ pub fn run() {
             set_dimmer_level,
             tray_get_icons,
             tray_send_action,
+            get_native_brightness,
+            set_native_brightness,
         ])
         .on_window_event(|window, event| {
             match event {
@@ -2455,6 +2457,29 @@ fn tray_send_action(id: String, action: String) -> Result<(), String> {
     {
         let _ = (&id, &action);
         Err("tray requires Windows".into())
+    }
+}
+
+// ===== Native brightness (REAL display brightness: WMI laptop panels +
+// DDC/CI external monitors — see win32/native_brightness.rs). The systemless
+// dim overlay above is untouched; the two compose. No persistence needed:
+// the monitor keeps its own level, like the keyboard brightness keys.
+#[tauri::command]
+fn get_native_brightness() -> Option<f64> {
+    #[cfg(windows)]
+    return win32::native_brightness::get_brightness();
+    #[cfg(not(windows))]
+    return None;
+}
+
+#[tauri::command]
+fn set_native_brightness(level: f64) -> usize {
+    #[cfg(windows)]
+    return win32::native_brightness::set_brightness(level.clamp(0.0, 1.0));
+    #[cfg(not(windows))]
+    {
+        let _ = level;
+        0
     }
 }
 

@@ -35,6 +35,7 @@ listen("table://widgets-shown", () => {
   void updateSysmon();
   void loadAudio();
   void loadTray();
+  void loadNativeBrightness();
   void renderGreeting();
   // 0.3.0 idle fix: polling loops (sysmon/CPU/RAM/battery, clipboard)
   // now run ONLY while this table is on screen. The window webview stays
@@ -246,8 +247,38 @@ async function updateSysmon() {
 const brightnessSlider = document.getElementById("brightness-slider") as HTMLInputElement;
 const brightnessVal = document.getElementById("brightness-val")!;
 
-async function loadBrightness() {
+// ===== Native brightness row (real display brightness) =====
+// WMI for laptop panels + DDC/CI for external monitors, applied to every
+// controllable output. The row hides itself when the machine exposes no
+// brightness control (typical single desktop monitor without DDC/CI). No
+// persistence — the monitor keeps its own level, like the keyboard keys.
+const nativeRow = document.getElementById("native-row")!;
+const nativeSlider = document.getElementById("native-slider") as HTMLInputElement;
+const nativeVal = document.getElementById("native-val")!;
+
+async function loadNativeBrightness() {
   if (document.getElementById("brightness-widget")?.style.display === "none") return;
+  try {
+    const current = await invoke<number | null>("get_native_brightness");
+    if (current === null || current === undefined) {
+      nativeRow.style.display = "none";
+      return;
+    }
+    const pct = Math.round(current);
+    nativeSlider.value = String(pct);
+    nativeVal.textContent = `${pct}%`;
+  } catch {
+    nativeRow.style.display = "none";
+  }
+}
+
+nativeSlider.addEventListener("input", () => {
+  const pct = parseInt(nativeSlider.value, 10);
+  nativeVal.textContent = `${pct}%`;
+  invoke("set_native_brightness", { level: pct / 100 }).catch(() => {});
+});
+
+async function loadBrightness() {  if (document.getElementById("brightness-widget")?.style.display === "none") return;
   try {
     // Read the persisted level from settings so the slider follows external
     // changes (settings table, startup restore).
@@ -448,6 +479,7 @@ listen<boolean>("icon-recolor://changed", (e) => {
   await initNotesWidget();
   initAudioApps("wg");
   await loadAudio();
+  await loadNativeBrightness();
   await loadBrightness();
   await loadTray();
   renderClipboard();
