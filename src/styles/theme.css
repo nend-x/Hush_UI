@@ -3,6 +3,11 @@
    Flat neutral surfaces, zero hue tint, no blur, baseline M3 accent
    ========================================================================= */
 
+/* quickshell.css carries the quickshell-dark STRUCTURAL rework (scoped
+   [data-theme="quickshell-dark"]) — imported so every window that links
+   theme.css gets it without extra <link> tags. */
+@import url("./quickshell.css");
+
 @font-face {
   font-family: "JetBrains Mono";
   src: url("../assets/fonts/JetBrainsMono-Regular.woff2") format("woff2");
@@ -196,78 +201,3 @@ html, body {
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover { background: var(--sand-dim); }
-
-/* =========================================================================
-   QUICKSHELL-DARK — Qt Quick / Desktop Widget Kit feel
-   The color palette comes from themes.json (persist.rs); this block
-   carries the STRUCTURAL side: Qt-like small radii, no spring overshoot,
-   sans-first type, and — most importantly — hover effects tamed: Qt
-   widgets respond to hover with an instant quiet background/border
-   change, never lift/scale/glow motion. Selector list mirrors every
-   hover/active transform rule in launcher.css + tables.css (keep in sync).
-   ========================================================================= */
-[data-theme="quickshell-dark"] {
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 8px;
-  --radius-xl: 10px;
-  /* Linear-ish — no overshoot, no bounce */
-  --ease-spring: cubic-bezier(0.25, 0.1, 0.25, 1);
-  --ease-out-soft: cubic-bezier(0.25, 0.1, 0.25, 1);
-  --ease-out-expo: cubic-bezier(0.25, 0.1, 0.25, 1);
-  --ease-in-out-soft: cubic-bezier(0.4, 0, 0.2, 1);
-  /* Sans-first — JetBrains Mono stays only in --font-mono contexts */
-  --font-ui: "Inter Variable", "Segoe UI", system-ui, sans-serif;
-  --font-display: "Inter Variable", "Segoe UI", system-ui, sans-serif;
-}
-
-/* Launcher tiles: no lift, no squash, no icon scale */
-[data-theme="quickshell-dark"] .launcher-item,
-[data-theme="quickshell-dark"] .launcher-item:hover,
-[data-theme="quickshell-dark"] .launcher-item:active,
-[data-theme="quickshell-dark"] .launcher-item .icon-box,
-[data-theme="quickshell-dark"] .launcher-item:hover .icon-box,
-[data-theme="quickshell-dark"] .launcher-item:active .icon-box,
-[data-theme="quickshell-dark"] .launcher-item:hover img,
-[data-theme="quickshell-dark"] .launcher-item:hover svg,
-[data-theme="quickshell-dark"] .launcher-root.icon-recolor .launcher-item:hover img,
-[data-theme="quickshell-dark"] .launcher-root.icon-recolor .launcher-item:hover svg,
-[data-theme="quickshell-dark"] .apps-tile:hover,
-[data-theme="quickshell-dark"] .apps-tile:active,
-[data-theme="quickshell-dark"] .launcher-root.icon-recolor .apps-tile:hover img {
-  transform: none;
-}
-/* Kill the sweep + radial glow pseudos — hover is a border/bg change only */
-[data-theme="quickshell-dark"] .launcher-item .icon-box::before,
-[data-theme="quickshell-dark"] .launcher-item:hover .icon-box::before {
-  display: none;
-}
-[data-theme="quickshell-dark"] .launcher-item .icon-box::after,
-[data-theme="quickshell-dark"] .launcher-item:hover .icon-box::after {
-  opacity: 0 !important;
-  transition: none;
-}
-[data-theme="quickshell-dark"] .launcher-item:hover .icon-box {
-  box-shadow: none;
-}
-/* Header action buttons */
-[data-theme="quickshell-dark"] .action-btn:hover,
-[data-theme="quickshell-dark"] .action-btn:active {
-  transform: none;
-}
-/* Sliders: thumb hover stays put */
-[data-theme="quickshell-dark"] .audio-slider::-webkit-slider-thumb,
-[data-theme="quickshell-dark"] .audio-slider::-webkit-slider-thumb:hover,
-[data-theme="quickshell-dark"] .brightness-slider::-webkit-slider-thumb,
-[data-theme="quickshell-dark"] .brightness-slider::-webkit-slider-thumb:hover,
-[data-theme="quickshell-dark"] .settings-slider::-webkit-slider-thumb,
-[data-theme="quickshell-dark"] .settings-slider::-webkit-slider-thumb:hover {
-  transform: none;
-}
-/* Refresh button, spotlight items */
-[data-theme="quickshell-dark"] .audio-apps-refresh:hover,
-[data-theme="quickshell-dark"] .spotlight-item:hover,
-[data-theme="quickshell-dark"] .spotlight-item.selected {
-  transform: none;
-}
-

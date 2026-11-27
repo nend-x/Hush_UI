@@ -10,6 +10,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 import { applyTheme as applyThemeShared, type ThemePayload } from "../shared/theme";
 import { initI18n, t } from "../shared/i18n";
+import { installSliderFillPainting, paintSliderFill } from "../shared/slider-fill";
 
 type Theme = ThemePayload;
 
@@ -94,6 +95,7 @@ async function load() {
   try {
     const s = await invoke<Settings>("load_settings");
     sliderHold.value = String(s.tables_hold_ms ?? 80);
+    paintSliderFill(sliderHold);
     holdVal.textContent = `${sliderHold.value} ${t("st.ms")}`;
     setSegClock(s.clock_24h ?? true);
     togglePieClock.checked = s.pie_clock ?? true;
@@ -218,6 +220,7 @@ btnClearIcons.addEventListener("click", async () => {
 
 // ===== Init =====
 (async function init() {
+  installSliderFillPainting();
   await initI18n();
   await loadInitialTheme();
   await load();
