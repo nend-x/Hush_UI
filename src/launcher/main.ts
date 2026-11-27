@@ -527,10 +527,15 @@ interface Theme {
 const THEME_ICON_RECOLOR: Record<string, { hue: string; sat: string; brightness: string }> = {
   // Neutral gray theme — recolor filter yields desaturated gray icons
   "material3-dark": { hue: "0deg", sat: "0.0", brightness: "0.95" },
+  // Breeze blue (#3DAEE9) — sepia base hue (~40deg) rotated up to ~203deg
+  "quickshell-dark": { hue: "165deg", sat: "1.5", brightness: "1.0" },
 };
 
 function applyTheme(theme: Theme) {
   const root = document.documentElement;
+  // Structural per-theme styling (radii, easing, hover behavior, fonts)
+  // keys off the theme name via CSS [data-theme] blocks in theme.css.
+  root.dataset.theme = theme.name;
   // Apply EVERY color from the theme as a CSS variable on :root.
   // The keys match the serde-renamed ThemeColors field names, so
   // "bg-espresso" → --bg-espresso, "bg-espresso-rgb" → --bg-espresso-rgb, etc.

@@ -440,6 +440,58 @@ pub fn default_themes() -> ThemesConfig {
                     shadow_card: "0 8px 24px rgba(0, 0, 0, 0.45)".to_string(),
                 },
             },
+            // ===== quickshell-dark — Qt Quick / Desktop Widget Kit feel =====
+            // Deep blue-tinted neutrals, Breeze highlight blue accent,
+            // hairline borders. The structural side (small radii, no spring
+            // easing, tamed hover effects, sans-first font stack) lives in
+            // the [data-theme="quickshell-dark"] block in theme.css — the
+            // frontend sets html[data-theme] from the theme name.
+            Theme {
+                name: "quickshell-dark".to_string(),
+                active: false,
+                colors: ThemeColors {
+                    // Surfaces — deep neutral with a slight blue cast
+                    bg_espresso: "#15171B".to_string(),
+                    bg_espresso_rgb: "21, 23, 27".to_string(),
+                    bg_espresso_deep: "#0D0E11".to_string(),
+                    bg_espresso_deep_rgb: "13, 14, 17".to_string(),
+                    bg_espresso_raised: "#1B1E24".to_string(),
+                    bg_espresso_raised_rgb: "27, 30, 36".to_string(),
+                    // Slightly translucent washes for popup surfaces
+                    bg_espresso_frosted: "rgba(18, 20, 25, 0.82)".to_string(),
+                    bg_espresso_glass: "rgba(18, 20, 25, 0.88)".to_string(),
+                    // Gray-blue ramp — outline / variant / on-surface
+                    sand: "#9BA3AE".to_string(),
+                    sand_rgb: "155, 163, 174".to_string(),
+                    sand_bright: "#C6CDD6".to_string(),
+                    sand_bright_rgb: "198, 205, 214".to_string(),
+                    sand_dim: "#565D68".to_string(),
+                    sand_dim_rgb: "86, 93, 104".to_string(),
+                    sand_cream: "#E4E8EE".to_string(),
+                    sand_cream_rgb: "228, 232, 238".to_string(),
+                    // Accent — Breeze highlight blue (KDE's default accent)
+                    accent_terracotta: "#3DAEE9".to_string(),
+                    accent_terracotta_rgb: "61, 174, 233".to_string(),
+                    accent_caramel: "#4FB1E8".to_string(),
+                    accent_caramel_rgb: "79, 177, 232".to_string(),
+                    accent_soft: "rgba(61,174,233,0.13)".to_string(),
+                    border_subtle: "rgba(255,255,255,0.07)".to_string(),
+                    border_strong: "rgba(255,255,255,0.17)".to_string(),
+                    status_running: "#3DAEE9".to_string(),
+                    status_pinned: "#565D68".to_string(),
+                    danger: "#DA4453".to_string(),
+                    danger_rgb: "218, 68, 83".to_string(),
+                    // Text — blue-gray ramp
+                    text_primary: "#E4E8EE".to_string(),
+                    text_secondary: "#B7BFCA".to_string(),
+                    text_muted: "#7F8894".to_string(),
+                    // Shadows — quiet, diffuse
+                    shadow_window: "0 1px 4px rgba(0, 0, 0, 0.34)".to_string(),
+                    shadow_popup: "0 2px 10px rgba(0, 0, 0, 0.42)".to_string(),
+                    shadow_icon_hover: "0 1px 2px rgba(0, 0, 0, 0.25)".to_string(),
+                    shadow_card: "0 4px 18px rgba(0, 0, 0, 0.40)".to_string(),
+                },
+            },
         ],
     }
 }
@@ -449,7 +501,7 @@ pub fn load_themes() -> ThemesConfig {
     let defaults = default_themes();
     match fs::read_to_string(&path) {
         Ok(s) => match serde_json::from_str::<ThemesConfig>(&s) {
-            Ok(config) => {
+            Ok(mut config) => {
                 // Migration: rewrite files whose schema is older than the
                 // current version — their color payloads are stale (this is
                 // how retired-theme payloads and recolored defaults get
@@ -463,6 +515,26 @@ pub fn load_themes() -> ThemesConfig {
                         let _ = fs::write(&path, s);
                     }
                     return defaults;
+                }
+                // Same-version file: append any default themes it doesn't
+                // have yet, so new themes added in an update appear for
+                // existing setups WITHOUT a version bump (which would
+                // clobber user edits). Custom user themes stay untouched.
+                let before = config.themes.len();
+                for d in &defaults.themes {
+                    if !config.themes.iter().any(|t| t.name == d.name) {
+                        config.themes.push(d.clone());
+                    }
+                }
+                // Exactly one active theme — first entry wins if the file
+                // somehow lost its active flag.
+                if !config.themes.iter().any(|t| t.active) {
+                    if let Some(first) = config.themes.first_mut() {
+                        first.active = true;
+                    }
+                }
+                if config.themes.len() != before {
+                    save_themes(&config);
                 }
                 config
             }
