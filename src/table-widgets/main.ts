@@ -34,6 +34,7 @@ listen("table://widgets-shown", () => {
   void applyVisibility();
   void updateSysmon();
   void loadAudio();
+  void loadTray();
   void renderGreeting();
   // 0.3.0 idle fix: polling loops (sysmon/CPU/RAM/battery, clipboard)
   // now run ONLY while this table is on screen. The window webview stays
@@ -69,6 +70,7 @@ const WIDGET_IDS = [
   "notes-widget",
   "sysmon-widget",
   "audio-widget",
+  "tray-widget",
   "brightness-widget",
 ] as const;
 
@@ -271,6 +273,68 @@ brightnessSlider.addEventListener("input", () => {
   }, 250);
 });
 
+// ===== Tray widget (native notification-area mirror) =====
+// The backend (win32/tray.rs) spies the real tray with systray-util and
+// broadcasts `tray://icons` snapshots; left/right clicks are forwarded to
+// the owning windows like native tray clicks. Render is a dumb replace —
+// the backend already diffed; icons render in discovery order so they
+// don't reshuffle on tooltip updates.
+interface TrayIcon {
+  id: string;
+  tooltip: string;
+  png_base64: string;
+  is_visible: boolean;
+}
+
+let trayIcons: TrayIcon[] = [];
+
+function renderTray() {
+  const list = document.getElementById("tray-list")!;
+  list.innerHTML = "";
+  const visible = trayIcons.filter((i) => i.is_visible);
+  if (visible.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "tray-empty";
+    empty.textContent = t("wg.trayEmpty");
+    list.appendChild(empty);
+    fitWindowHeight();
+    return;
+  }
+  for (const icon of visible) {
+    const btn = document.createElement("button");
+    btn.className = "tray-icon";
+    btn.title = icon.tooltip;
+    const img = document.createElement("img");
+    img.src = `data:image/png;base64,${icon.png_base64}`;
+    img.alt = icon.tooltip;
+    img.draggable = false;
+    btn.appendChild(img);
+    btn.addEventListener("click", () =>
+      invoke("tray_send_action", { id: icon.id, action: "left" }).catch(() => {}),
+    );
+    // Right click opens the icon's native menu (opened by the owning app
+    // at the cursor); suppress OUR context menu so it doesn't stack.
+    btn.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      invoke("tray_send_action", { id: icon.id, action: "right" }).catch(() => {});
+    });
+    list.appendChild(btn);
+  }
+  fitWindowHeight();
+}
+
+listen<TrayIcon[]>("tray://icons", (e) => {
+  trayIcons = e.payload;
+  renderTray();
+});
+
+async function loadTray() {
+  try {
+    trayIcons = await invoke<TrayIcon[]>("tray_get_icons");
+    renderTray();
+  } catch {}
+}
+
 // ===== Audio widget =====
 async function loadAudio() {
   if (document.getElementById("audio-widget")?.style.display === "none") return;
@@ -385,6 +449,7 @@ listen<boolean>("icon-recolor://changed", (e) => {
   initAudioApps("wg");
   await loadAudio();
   await loadBrightness();
+  await loadTray();
   renderClipboard();
   try {
     const items = await invoke<string[]>("load_clipboard");

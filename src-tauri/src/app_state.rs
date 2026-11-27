@@ -29,6 +29,22 @@ pub struct DesktopItem {
     pub pinned: bool,
 }
 
+/// One mirrored system-tray icon (see win32/tray.rs). Kept here so the
+/// `tray_get_icons` command stays platform-neutral like its siblings.
+#[derive(Clone, Serialize, Deserialize, PartialEq)]
+pub struct TrayIconPayload {
+    /// Stable id string ("hwnd:uid" or guid) — pass back to
+    /// `tray_send_action`.
+    pub id: String,
+    /// Native tooltip text.
+    pub tooltip: String,
+    /// Icon bitmap as base64 PNG ("" when the icon had no image).
+    pub png_base64: String,
+    /// Whether the icon is visible in the main tray area (vs the
+    /// hidden-overflow area).
+    pub is_visible: bool,
+}
+
 pub struct AppState {
     pub taskbar_apps: Vec<TaskbarApp>,
     pub desktop_items: Vec<DesktopItem>,

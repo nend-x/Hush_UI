@@ -52,6 +52,7 @@ const WIDGET_IDS = [
   "notes-widget",
   "sysmon-widget",
   "audio-widget",
+  "tray-widget",
   "brightness-widget",
 ] as const;
 
