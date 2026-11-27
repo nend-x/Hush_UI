@@ -7,7 +7,7 @@
 #
 # The build itself is the project's own build.ps1 -SkipPrereqs (the flag
 # exists for CI: the runner image already has Node and Rust MSVC). The
-# result, flatuihush.exe, is uploaded as a build artifact so releases can
+# result, hush_ui.exe, is uploaded as a build artifact so releases can
 # pick it up directly.
 #
 # Swatinem/rust-cache keeps src-tauri/target between runs — after the
@@ -50,17 +50,17 @@ jobs:
       - name: Verify exe
         shell: pwsh
         run: |
-          $exe = "src-tauri/target/x86_64-pc-windows-msvc/release/flatuihush.exe"
+          $exe = "src-tauri/target/x86_64-pc-windows-msvc/release/hush_ui.exe"
           if (-not (Test-Path $exe)) {
-            Write-Host "ERROR: flatuihush.exe was not produced." -ForegroundColor Red
+            Write-Host "ERROR: hush_ui.exe was not produced." -ForegroundColor Red
             exit 1
           }
           $size = (Get-Item $exe).Length
-          Write-Host ("flatuihush.exe OK — {0:N0} bytes" -f $size) -ForegroundColor Green
+          Write-Host ("hush_ui.exe OK — {0:N0} bytes" -f $size) -ForegroundColor Green
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: Hush_UI-portable-x64
-          path: src-tauri/target/x86_64-pc-windows-msvc/release/flatuihush.exe
+          path: src-tauri/target/x86_64-pc-windows-msvc/release/hush_ui.exe
           if-no-files-found: error

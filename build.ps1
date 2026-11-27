@@ -87,9 +87,9 @@ try {
         Pop-Location
     }
 
-    $exe = "$root\src-tauri\target\x86_64-pc-windows-msvc\release\flatuihush.exe"
+    $exe = "$root\src-tauri\target\x86_64-pc-windows-msvc\release\hush_ui.exe"
     if (-not (Test-Path $exe)) {
-        Write-Host "Build reported success but flatuihush.exe is missing at $exe" -ForegroundColor Red
+        Write-Host "Build reported success but hush_ui.exe is missing at $exe" -ForegroundColor Red
         exit 1
     }
 
@@ -100,7 +100,7 @@ try {
     Write-Host ("Size:   {0:N2} MB" -f $size) -ForegroundColor Green
     Write-Host ""
     Write-Host "To run: $exe" -ForegroundColor White
-    Write-Host "To revert: taskkill /f /im flatuihush.exe" -ForegroundColor DarkGray
+    Write-Host "To revert: taskkill /f /im hush_ui.exe" -ForegroundColor DarkGray
     exit 0
 } finally {
     Pop-Location
