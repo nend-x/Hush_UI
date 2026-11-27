@@ -15,7 +15,6 @@
 mod app_state;
 pub mod crash_handler;
 mod desktop_watcher;
-mod elevation;
 mod hide_taskbar;
 mod persist;
 #[cfg(windows)]
@@ -111,41 +110,6 @@ pub fn run() {
 
     log::info!("Hush_UI starting up…");
 
-    // UAC on launch: if not elevated, pop the standard Windows UAC prompt
-    // via ShellExecuteW "runas". Two outcomes:
-    //
-    //   - Accepted  — an elevated relaunch is in flight; this (non-elevated)
-    //     process exits and the elevated process takes over.
-    //   - Declined — the app STILL LAUNCHES, but in non-elevated mode. The
-    //     setup window surfaces a warning that the brightness dimmer may
-    //     not cover system/elevated apps (UIPI keeps a non-elevated overlay
-    //     below elevated windows; some elevated surfaces also block
-    //     click-through rendering above them).
-    #[cfg(windows)]
-    if !elevation::is_elevated() {
-        match elevation::request_elevation() {
-            elevation::ElevationOutcome::Accepted => {
-                // The elevated relaunch is in flight. Exit this process
-                // immediately — the elevated process will show the setup
-                // window and run normally.
-                log::info!("Exiting non-elevated instance — elevated relaunch is in flight");
-                std::process::exit(0);
-            }
-            elevation::ElevationOutcome::Declined => {
-                // User declined the UAC prompt — keep running without
-                // elevation.
-                elevation::UAC_DECLINED.store(true, std::sync::atomic::Ordering::SeqCst);
-                log::warn!(
-                    "UAC declined — launching non-elevated; the brightness dimmer may not work on system apps"
-                );
-            }
-            elevation::ElevationOutcome::AlreadyElevated => {
-                // Shouldn't happen (we checked is_elevated above), but
-                // continue if it does.
-            }
-        }
-    }
-
     // Check for -rs flag (reset/clean start)
     let args: Vec<String> = std::env::args().collect();
     if args.iter().any(|a| a == "-rs") {
@@ -173,9 +137,6 @@ pub fn run() {
     }
 
     let state = Arc::new(Mutex::new(AppState::new()));
-
-    // The app is usually elevated at this point (we requested UAC above and
-    // only continued when the user declined).
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -541,7 +502,6 @@ pub fn run() {
             save_settings,
             load_settings,
             clear_icon_cache,
-            get_elevation_state,
             set_tables_hover,
             tables_rendered,
             tables_hidden,
@@ -2173,23 +2133,6 @@ fn load_settings() -> persist::Settings {
 #[tauri::command]
 fn clear_icon_cache() -> usize {
     crate::win32::icon::clear_cache()
-}
-
-/// Launch-time elevation state — used by the brightness widget's warning.
-/// (0.3.0: previously invoked but never registered, so the warning could
-/// never render.)
-#[derive(serde::Serialize)]
-struct ElevationState {
-    elevated: bool,
-    uac_declined: bool,
-}
-
-#[tauri::command]
-fn get_elevation_state() -> ElevationState {
-    ElevationState {
-        elevated: elevation::is_elevated(),
-        uac_declined: elevation::UAC_DECLINED.load(std::sync::atomic::Ordering::SeqCst),
-    }
 }
 
 // ===== Language indicator =====

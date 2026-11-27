@@ -243,7 +243,6 @@ async function updateSysmon() {
 // (or exit Hush_UI) and the display is exactly as before.
 const brightnessSlider = document.getElementById("brightness-slider") as HTMLInputElement;
 const brightnessVal = document.getElementById("brightness-val")!;
-const brightnessHint = document.getElementById("brightness-hint") as HTMLElement;
 
 async function loadBrightness() {
   if (document.getElementById("brightness-widget")?.style.display === "none") return;
@@ -271,17 +270,6 @@ brightnessSlider.addEventListener("input", () => {
     } catch {}
   }, 250);
 });
-
-// Elevation warning: without admin (UAC declined) the overlay may not dim
-// system/elevated apps.
-(async () => {
-  try {
-    const st = await invoke<{ elevated?: boolean; uac_declined?: boolean }>("get_elevation_state");
-    if (st.uac_declined || st.elevated === false) {
-      brightnessHint.hidden = false;
-    }
-  } catch {}
-})();
 
 // ===== Audio widget =====
 async function loadAudio() {
