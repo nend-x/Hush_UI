@@ -10,6 +10,7 @@ import { applyTheme, type ThemePayload } from "../shared/theme";
 import { initI18n, t } from "../shared/i18n";
 import { initNotesWidget } from "../shared/notes-widget";
 import { initAudioApps } from "../shared/audio-apps";
+import { installSliderFillPainting, paintSliderFill } from "../shared/slider-fill";
 
 const root = document.getElementById("mt-root")!;
 const greeting = document.getElementById("mt-greeting")!;
@@ -21,6 +22,9 @@ const ramVal = document.getElementById("ram-val")!;
 const audioSlider = document.getElementById("audio-master-slider") as HTMLInputElement;
 const audioVal = document.getElementById("audio-master-val")!;
 const clipboardClearBtn = document.getElementById("clipboard-clear")!;
+
+// Filled-track sliders (quickshell theme) — user drags + programmatic writes.
+installSliderFillPainting();
 
 // ===== Show / hide =====
 let closing = false;
@@ -266,6 +270,7 @@ async function loadNativeBrightness() {
     }
     const pct = Math.round(current);
     nativeSlider.value = String(pct);
+    paintSliderFill(nativeSlider);
     nativeVal.textContent = `${pct}%`;
   } catch {
     nativeRow.style.display = "none";
@@ -285,6 +290,7 @@ async function loadBrightness() {  if (document.getElementById("brightness-widge
     const s = await invoke<{ dimmer_level?: number }>("load_settings");
     const pct = Math.round((s.dimmer_level ?? 0) * 100);
     brightnessSlider.value = String(pct);
+    paintSliderFill(brightnessSlider);
     brightnessVal.textContent = `${pct}%`;
   } catch {}
 }
@@ -373,6 +379,7 @@ async function loadAudio() {
     const vol = await invoke<number>("get_volume");
     const pct = Math.round(vol * 100);
     audioSlider.value = String(pct);
+    paintSliderFill(audioSlider);
     audioVal.textContent = `${pct}%`;
   } catch {}
 }
@@ -391,6 +398,7 @@ audioSlider.addEventListener("input", () => {
 listen<number>("volume://changed", (e) => {
   const pct = Math.round(e.payload * 100);
   audioSlider.value = String(pct);
+  paintSliderFill(audioSlider);
   audioVal.textContent = `${pct}%`;
 });
 

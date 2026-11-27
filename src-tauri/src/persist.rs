@@ -384,7 +384,7 @@ pub struct ThemesConfig {
 }
 
 /// Current themes.json schema version.
-const THEMES_VERSION: u32 = 2;
+const THEMES_VERSION: u32 = 3;
 
 pub fn default_themes() -> ThemesConfig {
     ThemesConfig {
@@ -396,7 +396,7 @@ pub fn default_themes() -> ThemesConfig {
             // surfaces — no blur, no frost, no grain.
             Theme {
                 name: "material3-dark".to_string(),
-                active: true,
+                active: false,
                 colors: ThemeColors {
                     // Surfaces — neutral gray: surface / lowest / high
                     bg_espresso: "#1C1C1C".to_string(),
@@ -448,7 +448,7 @@ pub fn default_themes() -> ThemesConfig {
             // frontend sets html[data-theme] from the theme name.
             Theme {
                 name: "quickshell-dark".to_string(),
-                active: false,
+                active: true,
                 colors: ThemeColors {
                     // Surfaces — deep neutral with a slight blue cast
                     bg_espresso: "#15171B".to_string(),
@@ -504,9 +504,11 @@ pub fn load_themes() -> ThemesConfig {
             Ok(mut config) => {
                 // Migration: rewrite files whose schema is older than the
                 // current version — their color payloads are stale (this is
-                // how retired-theme payloads and recolored defaults get
-                // replaced). Current-version files are preserved untouched
-                // so user edits survive.
+                // how retired-theme payloads, recolored defaults and the
+                // v3 quickshell-dark default flip get replaced). Users who
+                // actively picked a theme re-pick it once; the alternative
+                // (merging without a bump) would leave v2 files on a theme
+                // whose UI rework they've never seen.
                 if config.version < THEMES_VERSION {
                     log::info!(
                         "themes.json predates material3-dark — rewriting with defaults"

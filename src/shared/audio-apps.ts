@@ -16,6 +16,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { t } from "./i18n";
+import { paintSliderFill } from "./slider-fill";
 
 interface AppVolume {
   pid: number;
@@ -139,7 +140,10 @@ async function refresh(prefix: "wg" | "ln"): Promise<void> {
     if (draggingPid !== pid) {
       const slider = row.querySelector<HTMLInputElement>(".audio-app-slider");
       const val = row.querySelector<HTMLElement>(".audio-app-val");
-      if (slider) slider.value = String(pct);
+      if (slider) {
+        slider.value = String(pct);
+        paintSliderFill(slider);
+      }
       if (val) val.textContent = `${pct}%`;
     }
     const nameEl = row.querySelector<HTMLElement>(".audio-app-name");
@@ -181,6 +185,7 @@ function buildRow(app: AppVolume): HTMLElement {
   slider.min = "0";
   slider.max = "100";
   slider.value = String(Math.round(app.volume * 100));
+  paintSliderFill(slider);
 
   const val = document.createElement("span");
   val.className = "audio-val audio-app-val";

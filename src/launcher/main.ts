@@ -7,6 +7,7 @@ import { listen, emit } from "@tauri-apps/api/event";
 import { initNotesWidget } from "../shared/notes-widget";
 import { initAudioApps } from "../shared/audio-apps";
 import { initI18n, t } from "../shared/i18n";
+import { installSliderFillPainting, paintSliderFill } from "../shared/slider-fill";
 
 interface LauncherItem {
   id: string;
@@ -221,6 +222,7 @@ async function loadAudioWidget() {
     const vol = await invoke<number>("get_volume");
     const pct = Math.round(vol * 100);
     audioMasterSlider.value = String(pct);
+    paintSliderFill(audioMasterSlider);
     audioMasterVal.textContent = `${pct}%`;
   } catch {}
 }
@@ -242,6 +244,7 @@ audioMasterSlider?.addEventListener("input", () => {
 listen<number>("volume://changed", (e) => {
   const pct = Math.round(e.payload * 100);
   audioMasterSlider.value = String(pct);
+  paintSliderFill(audioMasterSlider);
   audioMasterVal.textContent = `${pct}%`;
 });
 
@@ -1382,6 +1385,7 @@ function showDialog(
 
 // ===== Init =====
 async function init() {
+  installSliderFillPainting();
   await initI18n();
   try {
     allItems = await invoke<LauncherItem[]>("get_desktop_items");
