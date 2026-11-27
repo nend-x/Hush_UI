@@ -32,12 +32,13 @@ exe filename is unchanged.
 | milk22 | — | tag only, points at main HEAD (no release yet) |
 | charley23 | v0.4.4 | frameless windows (no DWM ghost border), notes widget fits content |
 | corduroy24 | v0.4.5 | localization support, Russian UI language, language picker in Settings |
-| milk25 | v0.4.5 | current latest — run-table cleanup + run-as-admin fix, per-app volume mixer (animated dropdown), adaptive widgets table with smooth auto-resize; no version bump (user-built exe from the 0.4.5 source) |
+| milk25 | v0.4.5 | run-table cleanup + run-as-admin fix, per-app volume mixer (animated dropdown), adaptive widgets table with smooth auto-resize; no version bump (user-built exe from the 0.4.5 source) |
+| atlas26 | v0.4.6 | native tray widget in the widgets table (systray-util mirror, click forwarding), native display brightness (WMI laptop panels + DDC/CI monitors) beside the systemless dim, new Quickshell Dark theme (Qt-like radii/easing, tamed hover effects), startup UAC + elevation warnings removed; first CI-built release |
 
 ## Convention for future releases
 
-- Numbering continues from the last tag: next release is `atlas26`, then
-  `rune27`, ... Name pool: `oracle`, `echo`, `atlas`, `rune`,
+- Numbering continues from the last tag: next release is `rune27`, then
+  `fable28`, ... Name pool: `oracle`, `echo`, `atlas`, `rune`,
   `fable`, `legend`, `saga`, `omen`, `relic`, `veil`. (`overdrive24` was
   burned on a rolled-back release; `corduroy24` reused the number. `echo25`
   was skipped — its source payload shipped as the user-chosen `milk25`.)
