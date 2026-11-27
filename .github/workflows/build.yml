@@ -1,0 +1,66 @@
+# CI build of the Hush_UI portable exe on a Windows runner.
+#
+# Triggers:
+#   - every push to main
+#   - every pull_request (build validation before merge)
+#   - workflow_dispatch (manual run from the Actions tab)
+#
+# The build itself is the project's own build.ps1 -SkipPrereqs (the flag
+# exists for CI: the runner image already has Node and Rust MSVC). The
+# result, hush_ui.exe, is uploaded as a build artifact so releases can
+# pick it up directly.
+#
+# Swatinem/rust-cache keeps src-tauri/target between runs — after the
+# first build the incremental cargo step usually takes 1-3 minutes.
+
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    name: Windows x64 portable exe
+    runs-on: windows-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Build portable exe
+        shell: pwsh
+        run: ./build.ps1 -SkipPrereqs
+
+      - name: Verify exe
+        shell: pwsh
+        run: |
+          $exe = "src-tauri/target/x86_64-pc-windows-msvc/release/hush_ui.exe"
+          if (-not (Test-Path $exe)) {
+            Write-Host "ERROR: hush_ui.exe was not produced." -ForegroundColor Red
+            exit 1
+          }
+          $size = (Get-Item $exe).Length
+          Write-Host ("hush_ui.exe OK — {0:N0} bytes" -f $size) -ForegroundColor Green
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Hush_UI-portable-x64
+          path: src-tauri/target/x86_64-pc-windows-msvc/release/hush_ui.exe
+          if-no-files-found: error
