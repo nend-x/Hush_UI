@@ -486,6 +486,45 @@
 
 .brightness-slider::-webkit-slider-thumb:hover { transform: scale(1.3); }
 
+/* ===== Tray widget — native notification-area mirror (win32/tray.rs) ===== */
+.tray-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  min-height: 24px;
+}
+
+.tray-icon {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  padding: 3px;
+  line-height: 0;
+  cursor: pointer;
+  /* Qt-like: hover is an instant quiet background change, no motion. */
+  transition: none;
+}
+
+.tray-icon img {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.tray-icon:hover,
+.tray-icon:active {
+  background: var(--accent-soft);
+}
+
+.tray-empty {
+  font-family: var(--font-display);
+  font-size: 10px;
+  color: var(--sand-dim);
+  padding: 4px 0;
+}
+
 .settings-slider-row {
   display: flex;
   align-items: center;

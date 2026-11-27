@@ -144,6 +144,11 @@ pub fn run() {
         .setup(move |app| {
             let handle = app.handle().clone();
 
+            // Tray mirror — spy the native notification area (systray-util)
+            // so the widgets table can show and click the real tray icons.
+            #[cfg(windows)]
+            win32::tray::start(handle.clone());
+
             // First-run tutorial — a small looping animation window teaches
             // the Win-hold pie gesture on a genuinely first start (or after
             // "Reset config", which wipes tutorial_seen.json too).
@@ -528,6 +533,8 @@ pub fn run() {
             get_all_themes,
             set_active_theme,
             set_dimmer_level,
+            tray_get_icons,
+            tray_send_action,
         ])
         .on_window_event(|window, event| {
             match event {
@@ -2424,6 +2431,31 @@ fn set_dimmer_level(level: f64) {
     win32::dimmer::set_level(level.clamp(0.0, 1.0));
     #[cfg(not(windows))]
     let _ = level;
+}
+
+// ===== Tray mirror (native notification-area icons in the widgets table) =====
+//
+// win32::tray spies the real tray with systray-util and broadcasts
+// `tray://icons` snapshots; these two commands are the frontend's pull and
+// click paths (see win32/tray.rs for the threading model).
+
+#[tauri::command]
+fn tray_get_icons() -> Vec<app_state::TrayIconPayload> {
+    #[cfg(windows)]
+    return win32::tray::current_icons();
+    #[cfg(not(windows))]
+    return Vec::new();
+}
+
+#[tauri::command]
+fn tray_send_action(id: String, action: String) -> Result<(), String> {
+    #[cfg(windows)]
+    return win32::tray::send_action(&id, &action);
+    #[cfg(not(windows))]
+    {
+        let _ = (&id, &action);
+        Err("tray requires Windows".into())
+    }
 }
 
 // ===== Exit Hush_UI — revert everything and quit =====

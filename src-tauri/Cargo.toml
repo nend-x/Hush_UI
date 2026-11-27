@@ -62,6 +62,12 @@ windows = { version = "0.61", features = [
 # fires our `on_released` callback so we can toggle the launcher in-process.
 prevent-alt-win-menu = { version = "0.2.2", features = ["log"] }
 
+# Tray mirror (win32/tray.rs): systray-util spies the real notification area
+# and forwards clicks; tokio is needed for the select! owner loop that fans
+# spy events and click requests into the single `&mut Systray`.
+systray-util = "0.2"
+tokio = { version = "1", features = ["macros", "sync"] }
+
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
